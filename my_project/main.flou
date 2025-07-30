@@ -1,0 +1,13 @@
+main(
+    args { len ux, content len * String }
+) -> u8 {
+    err = print("Hello World!\n")
+    if err != 0 {
+        return err // if it fails
+    }
+    mut i ux = 0
+    loop i <= 0xA5 {
+        print("$i")
+        i++
+    }
+}

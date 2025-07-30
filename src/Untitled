@@ -1,0 +1,316 @@
+use num::BigUint;
+
+use crate::{
+    error::Position,
+    parser::tokenizing::{
+        binary_op::BinaryOp, chained_op::ChainedOp, num::NumberParsingNote, unary_op::UnaryOp,
+    },
+    typing::Type,
+};
+// use colored::Colorize;
+use std::{
+    fmt::{Debug, Display},
+    ops::{Index, IndexMut},
+    vec,
+};
+
+pub trait NodeWrapping: Clone + Debug {
+    fn new(pos: Position) -> Self;
+    fn add_note(self, comment: Note) -> Self;
+    fn with_node(self, node: Node) -> Self;
+    fn with_type(self, typed: Type) -> Self;
+    fn node_mut(&mut self) -> &mut Option<Node>;
+    fn node(&self) -> Option<&Node>;
+    fn typed(&self) -> Option<Type>;
+    fn pos(&self) -> Position;
+
+    fn display(&self, node_buffer: &Buffer<Self>, indentation: String) -> String;
+}
+
+#[derive(Debug, Clone)]
+pub struct NonNullNodeWrapper {
+    node: Node,
+    pos: Position,
+}
+trait Unwrapable: Clone + Debug {
+    fn unwrap(&self) -> &Node;
+}
+impl Unwrapable for NonNullNodeWrapper {
+    fn unwrap(&self) -> &Node {
+        &self.node
+    }
+}
+#[derive(Debug, Clone, PartialEq)]
+pub struct NodeWrapper {
+    pos: Position,
+    notes: Vec<Note>,
+    node: Option<Node>,
+    typed: Option<Type>,
+}
+
+impl NodeWrapping for NodeWrapper {
+    fn new(pos: Position) -> Self {
+        Self {
+            pos,
+            node: None,
+            notes: vec![],
+            typed: None,
+        }
+    }
+    fn add_note(mut self, comment: Note) -> Self {
+        self.notes.push(comment);
+        self
+    }
+    fn with_node(mut self, node: Node) -> Self {
+        self.node = Some(node);
+        self
+    }
+    fn with_type(mut self, typed: Type) -> Self {
+        self.typed = Some(typed);
+        self
+    }
+    fn node_mut(&mut self) -> &mut Option<Node> {
+        &mut self.node
+    }
+    fn node(&self) -> Option<&Node> {
+        self.node.as_ref()
+    }
+    fn typed(&self) -> Option<Type> {
+        self.typed
+    }
+    fn pos(&self) -> Position {
+        self.pos
+    }
+    fn display(&self, node_buffer: &Buffer<Self>, indentation: String) -> String {
+        let Some(node) = self.node() else {
+            return format!("{indentation}None");
+        };
+        use Node::*;
+        format!(
+            "{}{}",
+            indentation,
+            match node {
+                Scope(scope) => {
+                    let mut string = String::new();
+                    for node in &node_buffer[*scope] {
+                        let node = &node_buffer[*node];
+                        string += "\n";
+                        string += &node.display(&node_buffer, indentation.clone() + "  ")
+                    }
+                    format!("{{{string}\n}}")
+                }
+                Literal {
+                    val,
+                    imaginary_coefficient,
+                } => format!(
+                    "Literal {{ ({val}) ({}) }}",
+                    if *imaginary_coefficient { "i" } else { "" }
+                ),
+                Id(id) => format!("\"{}\"", id.clone()),
+                _ => todo!(),
+            }
+        )
+    }
+}
+#[derive(Debug, Clone, PartialEq)]
+pub enum Note {
+    NumberParsingNote(NumberParsingNote),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Scope {
+    pub content: Vec<NodeId>,
+}
+impl Scope {
+    pub fn new() -> Self {
+        Self { content: vec![] }
+    }
+}
+#[derive(Debug, Clone, PartialEq)]
+pub enum Node {
+    Scope(ScopeId),
+    // control flow structures
+    Conditional {
+        condition: NodeId,
+        looping: bool,
+        then_body: NodeId,
+        else_body: Option<NodeId>,
+    },
+    // single values
+    Literal {
+        val: BigUint,
+        imaginary_coefficient: bool,
+    },
+    Quote(String),
+
+    // identifiers
+    Id(String),
+    NativType(Type),
+
+    // compositional / summative expressions
+    Sum(Vec<NodeId>),
+    Com(Vec<NodeId>),
+
+    // multiple values
+    List(Vec<NodeId>),
+
+    // operations
+    BinaryOp {
+        kind: BinaryOp,
+        left: NodeId,
+        right: NodeId,
+    },
+    ChainedOp {
+        first: NodeId,
+        additions: Vec<(ChainedOp, NodeId)>,
+    },
+    UnaryOp {
+        kind: UnaryOp,
+        operand: NodeId,
+    },
+}
+/*
+impl Node {
+    fn as_code<W: Clone + std::fmt::Debug + Unwrapable>(
+        &self,
+        node_buffer: &NodeBuffer<W>,
+        indentation: String,
+    ) -> String {
+        let next_indentation = indentation.clone() + "  ";
+        use Node::*;
+        match self {
+            Num(num) => format!("Num({:?})", num),
+            Id(name) => format!("Id(String::from(\"{}\"))", name),
+            Quote(quote) => format!("Quote(String::from(\"{}\"))", quote),
+
+            Sum(content) => format!("Sum({})", to_rust_code(content, indentation)),
+            Com(content) => format!("Com({})", to_rust_code(content, indentation)),
+            List(content) => {
+                format!("List({})", to_rust_code(content, indentation))
+            }
+            UnaryOp { kind, operand } => {
+                format!(
+                    "UnaryOp{{kind: {:?}, operand: Box::new({})}}",
+                    kind,
+                    operand.unwrap().as_code(indentation)
+                )
+            }
+            ChainedOp { first, additions } => {
+                format!(
+                    "{}{{\n{}{}: {}::new({}),\n{}{}: vec![{}]\n{}}}",
+                    "ChainedOp".truecolor(239, 229, 182),
+                    next_indentation.clone(),
+                    "first".truecolor(164, 189, 255),
+                    "Box".truecolor(239, 229, 182),
+                    first.unwrap().as_code(next_indentation.clone()),
+                    next_indentation.clone(),
+                    "additions".truecolor(164, 189, 255),
+                    additions
+                        .iter()
+                        .map(|n| format!(
+                            "({:?}, {})",
+                            n.0,
+                            n.1.unwrap().as_code(next_indentation.clone())
+                        ))
+                        .collect::<Vec<String>>()
+                        .join(", "),
+                    indentation
+                )
+            }
+            Scope(..) => todo!(),
+            Conditional { .. } => todo!(),
+
+            BinaryOp { kind, left, right } => format!(
+                "{} {{\n{}{}: {}, \n{}{}: {}::new({}), \n{}{}: {}::new({})\n{}}}",
+                "BinaryOp".truecolor(239, 229, 182),
+                next_indentation.clone(),
+                "kind".truecolor(164, 189, 255),
+                format!("{:?}", kind).truecolor(239, 229, 182),
+                next_indentation.clone(),
+                "left".truecolor(164, 189, 255),
+                "Box".truecolor(239, 229, 182),
+                left.unwrap().as_code(next_indentation.clone()),
+                next_indentation.clone(),
+                "right".truecolor(164, 189, 255),
+                "Box".truecolor(239, 229, 182),
+                right.unwrap().as_code(next_indentation.clone()),
+                indentation
+            ),
+        }
+    }
+}
+pub fn to_rust_code<W: Clone + Debug + Unwrapable>(v: &Vec<W>, indentation: String) -> String {
+    format!(
+        "vec![{}]",
+        v.iter()
+            .map(|n| n.unwrap().as_code(indentation.clone()))
+            .collect::<Vec<String>>()
+            .join(", ")
+    )
+}*/
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NodeId(usize);
+impl NodeId {
+    pub const ROOT: Self = Self(0);
+    pub fn get<W: NodeWrapping>(self, buffer: &mut Buffer<W>) -> &mut Option<Node> {
+        buffer[self].node_mut()
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ScopeId(usize);
+impl ScopeId {
+    pub const ROOT: Self = Self(0);
+    pub fn get<W: NodeWrapping>(self, buffer: &mut Buffer<W>) -> &mut Vec<NodeId> {
+        &mut buffer[self]
+    }
+}
+pub struct Buffer<W: NodeWrapping> {
+    buffer: Vec<W>,
+    scopes: Vec<Vec<NodeId>>,
+}
+impl<W: NodeWrapping> Index<NodeId> for Buffer<W> {
+    type Output = W;
+    fn index(&self, index: NodeId) -> &Self::Output {
+        &self.buffer[index.0]
+    }
+}
+impl<W: NodeWrapping> IndexMut<NodeId> for Buffer<W> {
+    fn index_mut(&mut self, index: NodeId) -> &mut Self::Output {
+        &mut self.buffer[index.0]
+    }
+}
+impl<W: NodeWrapping> Index<ScopeId> for Buffer<W> {
+    type Output = Vec<NodeId>;
+    fn index(&self, index: ScopeId) -> &Self::Output {
+        &self.scopes[index.0]
+    }
+}
+impl<W: NodeWrapping> IndexMut<ScopeId> for Buffer<W> {
+    fn index_mut(&mut self, index: ScopeId) -> &mut Self::Output {
+        &mut self.scopes[index.0]
+    }
+}
+impl<W: NodeWrapping> Buffer<W> {
+    pub fn new() -> Self {
+        Self {
+            buffer: vec![],
+            scopes: vec![],
+        }
+    }
+    pub fn add(&mut self, node: W) -> NodeId {
+        self.buffer.push(node);
+        NodeId(self.buffer.len() - 1)
+    }
+    pub fn add_scope(&mut self) -> ScopeId {
+        self.scopes.push(vec![]);
+        ScopeId(self.scopes.len() - 1)
+    }
+}
+//////////////////////////////////////// DEBUG ////////////////////////////////////////
+
+impl<W: NodeWrapping> Display for Buffer<W> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let root = &self[NodeId::ROOT];
+        write!(f, "{}", root.display(&self, String::new()))
+    }
+}

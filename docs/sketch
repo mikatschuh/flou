@@ -1,0 +1,33 @@
+Maybe[T] (
+    | 0 = Some, T
+    | 1 = None
+)
+
+Employee {
+    name str,
+    age ux,
+    salary f32,
+}
+
+add(a f32, b f32) f32
+
+add(a=1, b=2)
+
+Linked List:
+
+Node {
+    content = u32,
+    next | 0 = Some, -> Node
+         | 1 = None
+}
+
+Node { content = 0, next = (Some, -)}->
+Node { content = 1, next = (Some, -)}->
+Node { content = 1, next = None }
+
+Boolean ( 0 = true | 1 = false )
+
+Slice[T] {
+    len ux,
+    ptr -> ( len * T )
+}

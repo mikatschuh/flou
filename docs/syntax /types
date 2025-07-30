@@ -1,0 +1,15 @@
+TYPES
+
+
+Types are an important part of Rux as its statically typed. There use is in fixed-variables, such as
+function arguments and return types and in mutateables. The general syntax is:
+
+    VARIABLE TYPE
+
+Rux itselfs has build-in types which resemble bit sequences, also known as numbers.
+For example "u32", "i32" or "u64". The u/i at the starts states if the number can also be negative,
+So for example a "u32" has a range from 0 - 4294967295. And "i32" on the other side got a range from
+-2147483648 - 2147483647. The number after the u/i denotes the number of bits. The number of bits can vary
+from 1 to basically infinity, being only constrained by the system's bit width running the compiler.
+If instead of u/i an "f" is at the start of the type, the type gets a floating point number, following
+the IEEE 754 floating point standart. Valid bit ranges are 16, 32, 64 and 128.
