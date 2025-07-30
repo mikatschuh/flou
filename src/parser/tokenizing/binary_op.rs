@@ -81,7 +81,6 @@ impl fmt::Display for BinaryOp {
         )
     }
 }
-use colored::Colorize;
 use BinaryOp::*;
 impl BinaryOp {
     pub(in crate::parser) fn binding_pow(self) -> f32 {

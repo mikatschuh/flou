@@ -185,7 +185,7 @@ impl Scope {
                 )
             }
         }
-        format!("{{{string}\n{}}}", indentation)
+        format!("{{{string}\n{indentation}}}")
     }
 }
 impl<'a> IntoIterator for &'a Scope {
