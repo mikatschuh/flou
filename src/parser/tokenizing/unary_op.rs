@@ -1,5 +1,7 @@
 use std::fmt;
 
+use crate::parser::tokenizing::binary_op::BindingPow;
+
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum UnaryOp {
     // infront of one argument // unary - prefix - ops
@@ -8,6 +10,8 @@ pub enum UnaryOp {
 
     Neg, // -a
     Pos, // +a
+
+    LfT, // 'a
 
     // after one argument // unary - postfix - ops
     Increment, // a++
@@ -21,6 +25,7 @@ impl From<PrefixUnaryOp> for UnaryOp {
             Not => UnaryOp::Not,
             Neg => UnaryOp::Neg,
             Pos => UnaryOp::Pos,
+            LfT => UnaryOp::LfT,
         }
     }
 }
@@ -43,19 +48,45 @@ impl fmt::Display for UnaryOp {
             Neg => "-",
             Pos => "+",
 
+            LfT => "'",
+
             Increment => "++",
             Decrement => "--",
         };
         write!(f, "{}", string)
     }
 }
+impl UnaryOp {
+    pub(in crate::parser) fn is_postfix(self) -> bool {
+        matches!(self, Self::Decrement | Self::Increment)
+    }
+}
+impl BindingPow for UnaryOp {
+    fn binding_pow(self) -> f32 {
+        use UnaryOp::*;
+        match self {
+            Neg => 5.4,
+            Pos => 5.4,
+
+            Ref => 9.0,
+            Not => 9.0,
+
+            Increment => 8.0,
+            Decrement => 8.0,
+
+            LfT => 11.0,
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum PrefixUnaryOp {
     // infront of one argument // unary - prefix - ops
-    Ref, // @a
+    Ref, // -> a
     Not, // !a
     Neg, // -a
     Pos, // +a
+    LfT, // 'a
 }
 
 impl fmt::Display for PrefixUnaryOp {
@@ -66,6 +97,7 @@ impl fmt::Display for PrefixUnaryOp {
             Not => "!",
             Neg => "- {",
             Pos => "+ {",
+            LfT => "'",
         };
         write!(f, "{}", string)
     }

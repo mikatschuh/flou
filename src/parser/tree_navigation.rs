@@ -67,6 +67,16 @@ impl<Wrapper: NodeWrapping> PrattParser<Wrapper> {
             None
         }
     }
+
+    /// Obtains the current node as mutable reference.
+    #[inline]
+    pub fn current_node_mut(&mut self) -> Option<&mut Node> {
+        if let Pointer::Node(node) = self.parse_stack.layers.last() {
+            node.get_mut(&mut self.tree).as_mut()
+        } else {
+            None
+        }
+    }
     /// Obtains the current wrapper.
     #[inline]
     pub fn current_wrapper(&self) -> Option<&Wrapper> {

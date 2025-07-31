@@ -83,6 +83,7 @@ pub(super) static PREFIX_UNARY_OPS: LazyLock<HashMap<&'static str, PrefixUnaryOp
             ("!", PrefixUnaryOp::Not),
             ("-", PrefixUnaryOp::Neg),
             ("+", PrefixUnaryOp::Pos),
+            ("'", PrefixUnaryOp::LfT),
         ])
     });
 pub(super) static POSTFIX_UNARY_OPS: LazyLock<HashMap<&'static str, PostfixUnaryOp>> =
@@ -100,6 +101,9 @@ pub(super) static BINARY_OPS: LazyLock<HashMap<&'static str, BinaryOp>> = LazyLo
         ("*", Mul),
         ("/", Div),
         ("%", Mod),
+        ("·", Dot),
+        ("><", Cross),
+        ("^", Power),
         ("|", BitwiseOr),
         ("&", BitwiseAnd),
         (">|", BitwiseXor),

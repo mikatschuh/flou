@@ -3,72 +3,13 @@ OPERATORS
 
 Operators are essential in programming languages. They are the building blocks for any larger operation.
 In Thyn they combine two, less or more identifiers and act one them. These are all operators one by one.
-The operators with the highest binding power come first, then it
-lower until it reaches its final destination: the equation operator:
+The operators with the lowest binding power come first, then it gets higher and higher:
 
 
-Application:
-    a(b)        Calling
-    a[b]        Indexing
+0 Equation Operator:
+    a = b       Definition
 
-Prefix Unary Operators:                         | overloadable
-    !a          Invertion (bitwise & logical)
-    -> a        Referencing
-    -a          Negation
-    +a          Double Negation
-
-Postfix Unary Mutations:                        | overloadable
-    a++         Incrementation
-    a--         Decrementation
-
---------------------------------------------------------------------------------\_ Operating on only one value
-
-Types:
-    a b        Typing identifiers
-
-Pipe Operator:
-
-    1. a <| b
-
-    2. a |> b   Piping
-                note: The precendence can be ignored while writing patterns.
-
-Mathematical/Binary Operators:                  | overloadable
-
-    1. User Defined Operators get defaulted here, for instance: · (dot), >< (cross-product)
-
-    2. a * b    Multiplication
-       a / b    Division
-       a % b    Euclidic Modulo: -10 % 3 = 2;
-                                 10 % -3 = -2
-    3. a + b    Addition
-       a - b    Subtraction
-
-    4. a & b    Bitwise AND
-       a | b    Bitwise OR
-       a >| b   Bitwise XOR
-
-Comparison Operators (can be chained):
-
-    1. a == b   Equality
-
-    2. a < b    Smaller
-       a > b    Greater
-       a <= b   Smaller or Equal
-       a >= b   Greater of Equal
-
-    3. a != b   Inequality (America)
-
-Logical Operators (lazy):
-    a || b      Or
-    a !|| b     Nor
-    a && b      And
-    a !&& b     Nand
-
-Comma Operator:
-    a, b        Combining values into a list.
-
-Mutations:                                      | overloadable
+1 Mutations:                                      | overloadable
     a := b      Writing
 
     a *= b      Multiplication-Assign
@@ -84,5 +25,67 @@ Mutations:                                      | overloadable
 
     a =|= b     Swapping
 
-Equation Operator:
-    a = b       Definition
+2 Comma Operator:
+    a, b        Combining values into a list.
+
+3 Logical Operators (lazy):
+    a || b      Or
+    a !|| b     Nor
+    a && b      And
+    a !&& b     Nand
+
+4 Comparison Operators (can be chained):
+
+    4.1 a < b    Smaller
+        a > b    Greater
+        a <= b   Smaller or Equal
+        a >= b   Greater of Equal
+        a != b   Inequality
+
+    4.2 a == b   Equality
+
+5 Mathematical/Binary Operators:                  | overloadable
+
+    5.1 a & b    Bitwise AND
+        a | b    Bitwise OR
+        a >| b   Bitwise XOR
+
+    5.2 a + b    Addition
+        a - b    Subtraction
+
+    5.3 a * b    Multiplication
+        a / b    Division
+        a % b    Euclidic Modulo: -10 % 3 = 2; 10 % -3 = -2
+
+    5.4 -a       Negation
+        +a       Double Negation
+
+
+    5.5 User Defined Operators get defaulted here, for instance:
+        · (dot-product),
+        >< (cross-product),
+        ^ (power)
+
+6 Pipe Operator:
+
+    6.1 a |> b   Piping
+                 note: The precendence can be ignored while writing patterns.
+    6.2 a <| b
+
+7 Types:
+    a b        Typing identifiers
+
+8 Postfix Unary Mutations:                        | overloadable
+    a++         Incrementation
+    a--         Decrementation
+
+9 Prefix Unary Operators:                         | overloadable
+    !a          Invertion (bitwise & logical)
+    -> a        Referencing
+
+10 Application:
+    a(b)        Calling
+    a[b]        Indexing
+
+11 Lifetime:
+    'a          Lifetiming

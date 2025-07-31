@@ -6,13 +6,14 @@ use std::{
 use crate::{
     error::{Error, ErrorCode, Errors, Position},
     parser::tokenizing::{
-        into_op::split_operator, keyword::Keyword, unary_op::UnaryOp, EscapeSequenceConfusion,
+        binary_op::BindingPow, into_op::split_operator, keyword::Keyword, unary_op::UnaryOp,
+        EscapeSequenceConfusion,
     },
     tree::{
         Node::{self},
         NodeWrapper, NodeWrapping, Note, Tree,
     },
-    Formatter,
+    unpack, Formatter,
 };
 use colored::{ColoredString, Colorize};
 use tokenizing::{
@@ -61,6 +62,7 @@ pub enum Token {
     },
     OpenCurly,
     ClosedCurly,
+    Comma,
 
     EoF,
 }
@@ -90,6 +92,7 @@ impl Display for Token {
                 },
                 OpenCurly => "{".bold(),
                 ClosedCurly => "}".bold(),
+                Comma => ",".bold(),
 
                 EoF => "EoF".bold(),
             }
@@ -215,7 +218,6 @@ impl<Wrapper: NodeWrapping> Parser<Tree<Wrapper>> for PrattParser<Wrapper> {
                 self.move_down(right);
             }
             ChainedOp(op) => todo!(),
-
             Quote { quote, confusions } => {
                 let quote = Wrapper::new(pos).with_node(Node::Quote(quote)).add_notes(
                     confusions
@@ -236,11 +238,18 @@ impl<Wrapper: NodeWrapping> Parser<Tree<Wrapper>> for PrattParser<Wrapper> {
             OpenBracket { squared } => {
                 let content = self.tree.add(Wrapper::new(pos.only_end() + 1));
                 let brackets = Wrapper::new(pos).with_node(Node::Brackets { squared, content });
+
                 match self.current() {
                     Pointer::Node(node) => match self.tree[node].node() {
-                        Some(_) => {
+                        Some(..) => {
+                            self.go_to_binding_pow(10.0); // application binding power
+                            let node = self.current().unwrap();
                             self.tree[node] = Wrapper::new(pos).with_node(Node::BinaryOp {
-                                op: BinaryOp::Apply,
+                                op: if squared {
+                                    BinaryOp::Index
+                                } else {
+                                    BinaryOp::App
+                                },
                                 left: self.tree.add(self.tree[node].clone()),
                                 right: content,
                             });
@@ -264,13 +273,32 @@ impl<Wrapper: NodeWrapping> Parser<Tree<Wrapper>> for PrattParser<Wrapper> {
                 self.move_into_new_scope(scope);
             }
             ClosedCurly => self.handle_closed_bracket(errors, pos, "}"),
-
+            Comma => {
+                self.go_to_binding_pow(2.0); // binding power of comma
+                if let Some(Node::List(..)) = self.current_node() {
+                    let id = self.tree.add(Wrapper::new(pos.only_end() + 1));
+                    unpack!(self.current_node_mut() => Some(Node::List(list)) => list.push(id));
+                    self.move_down(id)
+                } else if let Some(left) = self.current_node_id() {
+                    let left_pos = left.get_wrapper(&self.tree).pos().only_start();
+                    let right = self.tree.add(Wrapper::new(pos.only_end() + 1));
+                    self.tree[left] = Wrapper::new(left_pos).with_node(Node::List(vec![
+                        self.tree.add(self.tree[left].clone()),
+                        right,
+                    ]));
+                    self.move_down(right)
+                } else {
+                    // { , }
+                    //   ¯¯
+                    errors.push(Error::new(pos, ErrorCode::CommaWithoutValueBefore))
+                }
+            }
             EoF => {}
         }
     }
 }
-impl<W: NodeWrapping> PrattParser<W> {
-    fn add_val(&mut self, val: W) {
+impl<Wrapper: NodeWrapping> PrattParser<Wrapper> {
+    fn add_val(&mut self, val: Wrapper) {
         loop {
             match self.current() {
                 Pointer::Node(node) => match self.tree[node].node() {
@@ -289,13 +317,15 @@ impl<W: NodeWrapping> PrattParser<W> {
             }
         }
     }
+    /// Moves up until its at the right height. It will only ever move into nodes.
     fn go_to_binding_pow(&mut self, binding_pow: f32) {
         while let Some(higher) = self.higher_node() {
             match higher {
-                Node::BinaryOp { op: kind, .. } if kind.binding_pow() >= binding_pow => {
+                Node::BinaryOp { op, .. } if op.binding_pow() >= binding_pow => self.move_up(),
+                Node::UnaryOp { op, .. } if op.binding_pow() >= binding_pow && !op.is_postfix() => {
                     self.move_up()
                 }
-                Node::UnaryOp { .. } => self.move_up(),
+                Node::List(..) if 2.0 >= binding_pow => self.move_up(),
                 _ => return,
             }
         }
@@ -306,6 +336,30 @@ impl<W: NodeWrapping> PrattParser<W> {
                 Pointer::Node(node) => {
                     match node.get(&self.tree).unwrap() // unwrapping is ok since this is the higher layer
                 {
+                    Node::BinaryOp { op, .. }
+                    if (*op == BinaryOp::App && bracket == ")" || *op == BinaryOp::Index && bracket == "]")=> {
+                        self.move_up();
+                        self.current_wrapper_mut()
+                            .unwrap()
+                            .pos_mut()
+                            .set_end(pos.end_line, pos.end_char);
+                        return;
+                    }
+                    Node::BinaryOp { op, .. } if matches!(op, BinaryOp::App | BinaryOp::Index) => {
+                        errors.push(Error::new(
+                            pos,
+                            ErrorCode::WrongClosedBracket {
+                                expected: if *op == BinaryOp::App { ")" } else { "]" }.to_owned(),
+                                found: bracket.to_owned(),
+                            },
+                        ));
+                        self.move_up();
+                        self.current_wrapper_mut()
+                            .unwrap()
+                            .pos_mut()
+                            .set_end(pos.end_line, pos.end_char);
+                        return;
+                    }
                     Node::Brackets { squared, .. }
                         if *squared && bracket == "]" || !squared && bracket == ")" =>
                     {

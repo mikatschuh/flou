@@ -7,7 +7,6 @@ use crate::{
         with_written_out_escape_sequences, EscapeSequenceConfusion,
     },
     typing::Type,
-    utilities::NonEmptyVec,
 };
 // use colored::Colorize;
 use std::{
@@ -143,12 +142,42 @@ impl NodeWrapping for NodeWrapper {
                 ),
                 Brackets { squared, content } if !squared => format!(
                     "( {} )",
-                    content.get_wrapper(tree).display(tree, indentation + "  ")
+                    content.get_wrapper(tree).display(tree, next_indentation)
                 ),
                 Brackets { squared, content } if *squared => format!(
                     "[ {} ]",
-                    content.get_wrapper(tree).display(tree, indentation + "  ")
+                    content.get_wrapper(tree).display(tree, next_indentation)
                 ),
+                List(list) =>
+                    if list.len() < 2 {
+                        format!(
+                            "[{}]",
+                            list.iter()
+                                .map(|item| {
+                                    format!(
+                                        "{}",
+                                        item.get_wrapper(tree)
+                                            .display(tree, next_indentation.clone())
+                                    )
+                                })
+                                .collect::<String>()
+                        )
+                    } else {
+                        format!(
+                            "[\n{}{}]",
+                            list.iter()
+                                .map(|item| {
+                                    format!(
+                                        "{}{},\n",
+                                        next_indentation.clone(),
+                                        item.get_wrapper(tree)
+                                            .display(tree, next_indentation.clone())
+                                    )
+                                })
+                                .collect::<String>(),
+                            indentation
+                        )
+                    },
                 _ => todo!(),
             }
         )
@@ -227,19 +256,19 @@ pub enum Node {
         op: BinaryOp,
         left: NodeId,
         right: NodeId,
-    }, // left kind right
+    }, // left op right
     ChainedOp {
         first: NodeId,
-        additions: NonEmptyVec<(ChainedOp, NodeId)>,
-    },
+        additions: Vec<(ChainedOp, NodeId)>,
+    }, // first op additions[0].0 additions[0].1
     UnaryOp {
         op: UnaryOp,
         operand: NodeId,
-    }, // kind operand
+    }, // op operand
     Brackets {
         squared: bool,
         content: NodeId,
-    },
+    }, // squared content squared
 }
 /*
 impl Node {

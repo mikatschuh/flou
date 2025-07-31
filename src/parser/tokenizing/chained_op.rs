@@ -9,6 +9,8 @@ pub enum ChainedOp {
 }
 use std::fmt;
 use ChainedOp::*;
+
+use crate::parser::tokenizing::binary_op::BindingPow;
 impl fmt::Display for ChainedOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let string = match self {
@@ -22,8 +24,8 @@ impl fmt::Display for ChainedOp {
         write!(f, "{}", string)
     }
 }
-impl ChainedOp {
-    pub(in crate::parser) fn binding_pow(self) -> f32 {
+impl BindingPow for ChainedOp {
+    fn binding_pow(self) -> f32 {
         match self {
             Equal => 5.0,          // a == b
             NonEqual => 5.0,       // a != b

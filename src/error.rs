@@ -45,6 +45,7 @@ pub struct Error {
 }
 #[derive(Clone)]
 pub enum ErrorCode {
+    CommaWithoutValueBefore,
     UnknownOperator {
         operator: String,
     },
@@ -84,9 +85,8 @@ static ERROR: std::sync::LazyLock<String> =
     std::sync::LazyLock::new(|| format!("{}{}", "error".bold().red(), &":".bold()));
 macro_rules! format_error {
     // version without tip
-    ($buf:expr, $pos:expr, $msg:expr, [$($arg:expr),*]) => {
-        write!(
-            $buf,
+    ($pos:expr, $msg:expr, [$($arg:expr),*]) => {
+        format!(
             "\n{}\t{} {}\n",
             *ERROR,
             format!($msg, $(format!(" {} ", $arg.bold())),*),
@@ -94,9 +94,8 @@ macro_rules! format_error {
         )
     };
     // version without tip and without arguments
-    ($buf:expr, $pos:expr, $msg:expr) => {
-        write!(
-            $buf,
+    ($pos:expr, $msg:expr) => {
+        format!(
             "\n{}\t{} {}\n",
             *ERROR,
             $msg,
@@ -105,9 +104,8 @@ macro_rules! format_error {
     };
 
     // version with tip
-    ($buf:expr, $pos:expr, $msg:expr, [$($arg:expr),*], $tip:expr, [$($tip_arg:expr),*]) => {
-        write!(
-            $buf,
+    ($pos:expr, $msg:expr, [$($arg:expr),*], $tip:expr, [$($tip_arg:expr),*]) => {
+        format!(
             "\n{}\t{} {}\n\
              {}\t{}\n",
              *ERROR,
@@ -118,9 +116,8 @@ macro_rules! format_error {
         )
     };
     // version with tip but without arguments
-    ($buf:expr, $pos:expr, $msg:expr, $tip:expr) => {
-        write!(
-            $buf,
+    ($pos:expr, $msg:expr, $tip:expr) => {
+        format!(
             "\n{}\t{} {}\n\
              {}\t{}\n",
              *ERROR,
@@ -131,9 +128,8 @@ macro_rules! format_error {
         )
     };
     // version with tip but without arguments for tip
-    ($buf:expr, $pos:expr, $msg:expr, [$($arg:expr),*], $tip:expr) => {
-        write!(
-            $buf,
+    ($pos:expr, $msg:expr, [$($arg:expr),*], $tip:expr) => {
+        format!(
             "\n{}\t{} {}\n\
              {}\t{}\n",
              *ERROR,
@@ -144,18 +140,16 @@ macro_rules! format_error {
         )
     };
     // version without tip and without position
-    ($buf:expr, $msg:expr, [$($arg:expr),*]) => {
-        write!(
-            $buf,
+    ($msg:expr, [$($arg:expr),*]) => {
+        format!(
             "\n{}\t{}\n",
             *ERROR,
             format!($msg, $(format!(" {} ", $arg.bold())),*),
         )
     };
     // version without tip and without position and without arguments
-    ($buf:expr, $msg:expr) => {
-        write!(
-            $buf,
+    ($msg:expr) => {
+        format!(
             "\n{}\t{}\n",
             *ERROR,
             $msg,
@@ -163,9 +157,8 @@ macro_rules! format_error {
     };
 
     // version with tip and without position
-    ($buf:expr, $msg:expr, [$($arg:expr),*], $tip:expr, [$($tip_arg:expr),*]) => {
-        write!(
-            $buf,
+    ($msg:expr, [$($arg:expr),*], $tip:expr, [$($tip_arg:expr),*]) => {
+        format!(
             "\n{}\t{}\n\
              {}\t{}\n",
              *ERROR,
@@ -207,91 +200,88 @@ macro_rules! format_error_arg {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use ErrorCode::*;
-        match &self.error {
-            UnknownOperator { operator } => format_error!(
-                f,
-                self.pos,
-                "the operator {} is not known to the compiler",
-                [operator]
-            ),
-            MissingClosingQuotes { quote } => format_error!(
-                f,
-                self.pos,
-                "the ending quotes of the quote {} were missing",
-                [format!("{}{}{}", "\"", quote, "\"".red().underline())]
-            ),
-            NumberContainedOnlyPrefix { number } => {
-                format_error!(
-                    f,
+        write!(
+            f,
+            "{}",
+            match &self.error {
+                CommaWithoutValueBefore =>
+                    format_error!(self.pos, "a comma needs a value infront of it"),
+                UnknownOperator { operator } => format_error!(
                     self.pos,
-                    "there was a base prefix and nothing behind, {}",
-                    [number],
-                    "if you wanted to make an identifier, dont let it start with a number"
-                )
-            }
-            InvalidCombination { left, right } => {
-                if let Some(left) = left {
-                    if let Some(right) = right {
+                    "the operator {} is not known to the compiler",
+                    [operator]
+                ),
+                MissingClosingQuotes { quote } => format_error!(
+                    self.pos,
+                    "the ending quotes of the quote {} were missing",
+                    [format!("{}{}{}", "\"", quote, "\"".red().underline())]
+                ),
+                NumberContainedOnlyPrefix { number } => {
+                    format_error!(
+                        self.pos,
+                        "there was a base prefix and nothing behind, {}",
+                        [number],
+                        "if you wanted to make an identifier, dont let it start with a number"
+                    )
+                }
+                InvalidCombination { left, right } => {
+                    if let Some(left) = left {
+                        if let Some(right) = right {
+                            format_error!(
+                                self.pos,
+                                "you can't combine {} with an {}",
+                                [left, right]
+                            )
+                        } else {
+                            format_error!(
+                                self.pos,
+                                "{} was followed by a great nothingness",
+                                [left]
+                            )
+                        }
+                    } else if let Some(right) = right {
                         format_error!(
-                            f,
                             self.pos,
-                            "you can't combine {} with an {}",
-                            [left, right]
+                            "{} followed a great nothingness",
+                            [right],
+                            "place a value infront"
                         )
                     } else {
-                        format_error!(
-                            f,
-                            self.pos,
-                            "{} was followed by a great nothingness",
-                            [left]
-                        )
+                        unreachable!()
                     }
-                } else if let Some(right) = right {
+                }
+                ElseWithNoIf => {
                     format_error!(
-                        f,
                         self.pos,
-                        "{} followed a great nothingness",
-                        [right],
-                        "place a value infront"
+                        "the else - keyword has been used without an if - block infront of it",
+                        "you've to add the if block"
                     )
-                } else {
-                    unreachable!()
+                }
+                SecondElse => {
+                    format_error!(self.pos, "there was a second else")
+                }
+                ClaimedKeyword { keyword } => {
+                    format_error!(self.pos,
+                        "the keyword {} is claimed, could be that its used in the future, or I just forget abt it",
+                        [keyword], "seriously {} isnt a good variable name", [keyword]
+                    )
+                }
+                NoOpenedBracket { closed } => {
+                    format_error!(
+                        self.pos,
+                        "there was a closed bracket {} but no opened one",
+                        [closed]
+                    )
+                }
+                WrongClosedBracket { expected, found } => {
+                    format_error!(
+                        self.pos,
+                        "found the closed bracket {} but actually expected {}",
+                        [found, expected]
+                    )
                 }
             }
-            ElseWithNoIf => {
-                format_error!(
-                    f,
-                    self.pos,
-                    "the else - keyword has been used without an if - block infront of it",
-                    "you've to add the if block"
-                )
-            }
-            SecondElse => {
-                format_error!(f, self.pos, "there was a second else")
-            }
-            ClaimedKeyword { keyword } => {
-                format_error!(
-                f, self.pos, "the keyword {} is claimed, could be that its used in the future, or I just forget abt it",
-                [keyword], "seriously {} isnt a good variable name", [keyword]
-            )
-            }
-            NoOpenedBracket { closed } => {
-                format_error!(
-                    f,
-                    self.pos,
-                    "there was a closed bracket {} but no opened one",
-                    [closed]
-                )
-            }
-            WrongClosedBracket { expected, found } => {
-                format_error!(
-                    f,
-                    self.pos,
-                    "found the closed bracket {} but actually expected {}",
-                    [found, expected]
-                )
-            }
-        }
+        )
     }
 }
 #[derive(Debug)]
@@ -304,18 +294,21 @@ pub enum CliError {
 
 impl fmt::Display for CliError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::ThreadPanic(e) => format_error!(f, e),
-            Self::Io(e) => format_error!(f, e),
-            Self::NotValidUTF8(path) => {
-                format_error!(
-                    f,
-                    "the file  {}  did not contain valid UTF-8",
-                    format!("{:?}", path)
-                )
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::ThreadPanic(e) => format_error!(e),
+                Self::Io(e) => format_error!(e),
+                Self::NotValidUTF8(path) => {
+                    format_error!(
+                        "the file  {}  did not contain valid UTF-8",
+                        format!("{:?}", path)
+                    )
+                }
+                Self::CommandLine(mes) => format_error!(mes),
             }
-            Self::CommandLine(mes) => format_error!(f, mes),
-        }
+        )
     }
 }
 
@@ -382,14 +375,20 @@ impl Position {
         self.end_line = end_line;
         self.end_char = end_char;
     }
-    pub fn only_end(&self) -> Self {
-        Self {
-            file: self.file,
-            start_line: self.end_line,
-            start_char: self.end_char,
-            end_line: self.end_line,
-            end_char: self.end_char,
-        }
+    pub fn with_end(mut self, end_line: usize, end_char: usize) -> Self {
+        self.end_line = end_line;
+        self.end_char = end_char;
+        self
+    }
+    pub fn only_end(mut self) -> Self {
+        self.start_line = self.end_line;
+        self.start_char = self.end_char;
+        self
+    }
+    pub fn only_start(mut self) -> Self {
+        self.end_line = self.start_line;
+        self.end_char = self.start_char;
+        self
     }
     pub fn one_line_higher(&self) -> Self {
         Self {

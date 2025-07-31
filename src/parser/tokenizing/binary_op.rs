@@ -1,22 +1,10 @@
+pub trait BindingPow {
+    fn binding_pow(self) -> f32;
+}
+
 #[derive(Clone, PartialEq, Debug, Copy)]
 pub enum BinaryOp {
-    Apply, // a(b) / a[b]
-
-    Mul, // a * b
-    Div, // a / b
-    Mod, // a % b
-
-    Add, // a + b
-    Sub, // a - b
-
-    BitwiseAnd, // a & b
-    BitwiseOr,  // a | b
-    BitwiseXor, // a >| b
-
-    Or,   // a || b
-    Nor,  // a !|| b
-    And,  // a && b
-    Nand, // a !&& b
+    Equation, // a = b
 
     Write, // a := b
 
@@ -33,7 +21,28 @@ pub enum BinaryOp {
 
     Swap, // a =|= b
 
-    Equation, // a = b
+    Or,   // a || b
+    Nor,  // a !|| b
+    And,  // a && b
+    Nand, // a !&& b
+
+    BitwiseAnd, // a & b
+    BitwiseOr,  // a | b
+    BitwiseXor, // a >| b
+
+    Add, // a + b
+    Sub, // a - b
+
+    Mul, // a * b
+    Div, // a / b
+    Mod, // a % b
+
+    Dot,   // a · b
+    Cross, // a >< b
+    Power, // a ^ b
+
+    Index, // a[b]
+    App,   // a(b)
 }
 use std::fmt;
 impl fmt::Display for BinaryOp {
@@ -43,23 +52,7 @@ impl fmt::Display for BinaryOp {
             f,
             "{}",
             match self {
-                Apply => "app",
-
-                Mul => "*",
-                Div => "/",
-                Mod => "%",
-
-                Add => "+",
-                Sub => "-",
-
-                BitwiseOr => "|",
-                BitwiseAnd => "&",
-                BitwiseXor => ">|",
-
-                Or => "||",
-                Nor => "!||",
-                And => "&&",
-                Nand => "!&&",
+                Equation => "=",
 
                 Write => ":=",
 
@@ -76,50 +69,80 @@ impl fmt::Display for BinaryOp {
 
                 Swap => "=|=",
 
-                Equation => "=",
+                Or => "||",
+                Nor => "!||",
+                And => "&&",
+                Nand => "!&&",
+
+                BitwiseOr => "|",
+                BitwiseAnd => "&",
+                BitwiseXor => ">|",
+
+                Add => "+",
+                Sub => "-",
+
+                Mul => "*",
+                Div => "/",
+                Mod => "%",
+
+                Dot => "·",
+                Cross => "><",
+                Power => "^",
+
+                Index => "index",
+                App => "app",
             }
         )
     }
 }
 use BinaryOp::*;
-impl BinaryOp {
-    pub(in crate::parser) fn binding_pow(self) -> f32 {
+impl BindingPow for BinaryOp {
+    fn binding_pow(self) -> f32 {
         match self {
-            Apply => 7.0,
+            Equation => 0.0, // a = b
 
-            Mul => 6.0,
-            Div => 6.0,
-            Mod => 6.0,
+            Write => 1.0,
 
-            Add => 5.0,
-            Sub => 5.0,
+            MulAssign => 1.0,
+            DivAssign => 1.0,
+            ModAssign => 1.0,
 
-            BitwiseOr => 4.0,
-            BitwiseAnd => 4.0,
-            BitwiseXor => 4.0,
+            AddAssign => 1.0,
+            SubAssign => 1.0,
 
+            BitwiseAndAssign => 1.0,
+            BitwiseOrAssign => 1.0,
+            BitwiseXorAssign => 1.0,
+
+            Swap => 1.0,
+
+            // Comma => 2.0
             Or => 3.0,   // a || b
             Nor => 3.0,  // a !|| b
             And => 3.0,  // a && b
             Nand => 3.0, // a !&& b
 
-            // Comma => 2.5
-            Write => 2.0,
+            // Smaller / Greater / SmallerOrEqual / GreaterOrEqual => 4.1
+            // Equal / NotEqual => 4.2
+            BitwiseOr => 5.1,
+            BitwiseAnd => 5.1,
+            BitwiseXor => 5.1,
 
-            MulAssign => 2.0,
-            DivAssign => 2.0,
-            ModAssign => 2.0,
+            Add => 5.2,
+            Sub => 5.2,
 
-            AddAssign => 2.0,
-            SubAssign => 2.0,
+            Mul => 5.3,
+            Div => 5.3,
+            Mod => 5.3,
+            // Neg => 5.4
+            // Pos => 5.4
+            Dot => 5.5,
+            Cross => 5.5,
+            Power => 5.5,
 
-            BitwiseAndAssign => 2.0,
-            BitwiseOrAssign => 2.0,
-            BitwiseXorAssign => 2.0,
-
-            Swap => 2.0,
-
-            Equation => 1.0, // a = b
+            // CustomOperators => 5.5
+            Index => 10.0,
+            App => 10.0,
         }
     }
 }

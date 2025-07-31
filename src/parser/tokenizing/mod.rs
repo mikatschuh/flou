@@ -94,6 +94,11 @@ impl Tokenizer {
                     self.pos.set_new_start();
                     push(errors, self.pos, Token::ClosedCurly)
                 }
+                ',' => {
+                    self.finish(errors, push);
+                    self.pos.set_new_start();
+                    push(errors, self.pos, Token::Comma)
+                }
                 _ => match into_op::char_is_op(c) {
                     true => match self.state {
                         State::Op(ref mut op) => {
