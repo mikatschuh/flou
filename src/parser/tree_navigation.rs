@@ -95,12 +95,20 @@ impl<Wrapper: NodeWrapping> PrattParser<Wrapper> {
             None
         }
     }
+    #[inline]
+    pub fn points_to_some_node(&self) -> bool {
+        if let Pointer::Node(node) = self.parse_stack.layers.last() {
+            node.is_non_empty(&self.tree)
+        } else {
+            false
+        }
+    }
     /// Returns the upper layer if there's one.
     #[inline]
     pub fn higher(&self) -> Option<Pointer> {
         self.parse_stack.layers.penultimate().copied()
     }
-    /// Returns the upper layer if there's one.
+    /// Returns the upper layer's id if there's one.
     #[inline]
     pub fn higher_node_id(&self) -> Option<NonNullNodeId> {
         if let Some(Pointer::Node(node)) = self.parse_stack.layers.penultimate().copied() {

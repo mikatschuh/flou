@@ -11,9 +11,11 @@ use crate::{
     },
     tree::{
         Node::{self},
-        NodeWrapper, NodeWrapping, Note, Tree,
+        NodeId, NodeWrapper, NodeWrapping, Note, Tree,
     },
-    unpack, Formatter,
+    unpack,
+    utilities::NonEmptyVec,
+    Formatter,
 };
 use colored::{ColoredString, Colorize};
 use tokenizing::{
@@ -62,7 +64,9 @@ pub enum Token {
     },
     OpenCurly,
     ClosedCurly,
+
     Comma,
+    Colon,
 
     EoF,
 }
@@ -92,7 +96,9 @@ impl Display for Token {
                 },
                 OpenCurly => "{".bold(),
                 ClosedCurly => "}".bold(),
+
                 Comma => ",".bold(),
+                Colon => ":".bold(),
 
                 EoF => "EoF".bold(),
             }
@@ -148,23 +154,19 @@ impl<Wrapper: NodeWrapping> Parser<Tree<Wrapper>> for PrattParser<Wrapper> {
                 return;
             }
             PreUnary(op) => {
-                let op: UnaryOp = op.into(); // PreUnary -> UnaryOp
-                if let UnaryOp::Neg | UnaryOp::Pos = op {
-                    if let Some(node) = self.current_node_id() {
-                        if let Some(..) = self.tree[node].node() {
-                            self.push(
-                                errors,
-                                pos,
-                                Binary(if op == UnaryOp::Pos {
-                                    BinaryOp::Add
-                                } else {
-                                    BinaryOp::Sub
-                                }),
-                            );
-                            return; // a -/+
-                                    //   ¯¯¯
-                        }
-                    }
+                let op: UnaryOp = op.into();
+                if matches!(op, UnaryOp::Neg | UnaryOp::Pos) && self.points_to_some_node() {
+                    self.push(
+                        errors,
+                        pos,
+                        Binary(if op == UnaryOp::Pos {
+                            BinaryOp::Add
+                        } else {
+                            BinaryOp::Sub
+                        }),
+                    );
+                    return; // a -/+
+                            //   ¯¯¯
                 }
                 let operand = self.tree.add(Wrapper::new(pos.only_end() + 1));
                 let unary_op = Wrapper::new(pos).with_node(Node::UnaryOp { op, operand });
@@ -173,29 +175,13 @@ impl<Wrapper: NodeWrapping> Parser<Tree<Wrapper>> for PrattParser<Wrapper> {
             }
             PostUnary(op) => {
                 let op: UnaryOp = op.into();
-                if let Some(..) = self.current_node() {
-                    while let Some(higher) = self.higher_node() {
-                        match higher {
-                            Node::UnaryOp { op, .. }
-                                if *op != UnaryOp::Decrement && *op != UnaryOp::Increment =>
-                            {
-                                self.move_up()
-                            }
-                            _ => {
-                                let operand = self.current_node_id().unwrap();
-                                // This unwrap is not a problem, as,
-                                // 1. As we only moved up into UnaryOp s.
-                                // 2. If we actually didn't move up at all the condition that
-                                //    let Some(..) = self.current_node()
-                                //    would still hold up
-                                self.tree[operand] = Wrapper::new(pos).with_node(Node::UnaryOp {
-                                    op,
-                                    operand: self.tree.add(self.tree[operand].clone()),
-                                });
-                                break;
-                            }
-                        }
-                    }
+                if self.points_to_some_node() {
+                    self.go_to_binding_pow(op.binding_pow());
+                    let operand = self.current_node_id().unwrap();
+                    self.tree[operand] = Wrapper::new(pos).with_node(Node::UnaryOp {
+                        op,
+                        operand: self.tree.add(self.tree[operand].clone()),
+                    });
                 } else {
                     let unary_op = match op {
                         UnaryOp::Increment => PrefixUnaryOp::Pos,
@@ -208,16 +194,44 @@ impl<Wrapper: NodeWrapping> Parser<Tree<Wrapper>> for PrattParser<Wrapper> {
             }
             Binary(op) => {
                 self.go_to_binding_pow(op.binding_pow());
-                let left = self.current().unwrap(); // todo!
-                let right = self.tree.add(Wrapper::new(pos.only_end() + 1));
-                self.tree[left] = Wrapper::new(pos).with_node(Node::BinaryOp {
-                    op,
-                    left: self.tree.add(self.tree[left].clone()),
-                    right,
-                });
-                self.move_down(right);
+                if self.points_to_some_node() {
+                    self.make_binary_operator(pos, |left, right| Node::BinaryOp {
+                        op,
+                        left,
+                        right,
+                    });
+                } else {
+                    errors.push(Error::new(
+                        pos,
+                        ErrorCode::ExpectedValue {
+                            found: op.to_string(),
+                        },
+                    ))
+                }
             }
-            ChainedOp(op) => todo!(),
+            ChainedOp(op) => {
+                let binding_pow = op.binding_pow();
+                self.go_to_binding_pow(binding_pow); // binding power of comma
+                if let Some(Node::ChainedOp { .. }) = self.current_node() {
+                    let right = self.tree.add(Wrapper::new(pos.only_end() + 1));
+                    unpack!(self.current_node_mut() => Some(Node::ChainedOp{additions, ..}) => additions.push((op, right)));
+                    self.move_down(right)
+                } else if self.points_to_some_node() {
+                    self.make_binary_operator(pos, |left, right| Node::ChainedOp {
+                        first: left,
+                        additions: NonEmptyVec::new((op, right)),
+                    });
+                } else {
+                    // { , }
+                    //  ¯¯
+                    errors.push(Error::new(
+                        pos,
+                        ErrorCode::ExpectedValue {
+                            found: ",".to_owned(),
+                        },
+                    ))
+                }
+            }
             Quote { quote, confusions } => {
                 let quote = Wrapper::new(pos).with_node(Node::Quote(quote)).add_notes(
                     confusions
@@ -276,21 +290,32 @@ impl<Wrapper: NodeWrapping> Parser<Tree<Wrapper>> for PrattParser<Wrapper> {
             Comma => {
                 self.go_to_binding_pow(2.0); // binding power of comma
                 if let Some(Node::List(..)) = self.current_node() {
-                    let id = self.tree.add(Wrapper::new(pos.only_end() + 1));
-                    unpack!(self.current_node_mut() => Some(Node::List(list)) => list.push(id));
-                    self.move_down(id)
-                } else if let Some(left) = self.current_node_id() {
-                    let left_pos = left.get_wrapper(&self.tree).pos().only_start();
                     let right = self.tree.add(Wrapper::new(pos.only_end() + 1));
-                    self.tree[left] = Wrapper::new(left_pos).with_node(Node::List(vec![
-                        self.tree.add(self.tree[left].clone()),
-                        right,
-                    ]));
+                    unpack!(self.current_node_mut() => Some(Node::List(list)) => list.push(right));
                     self.move_down(right)
+                } else if self.points_to_some_node() {
+                    self.make_binary_operator(pos, |left, right| Node::List(vec![left, right]));
                 } else {
                     // { , }
-                    //   ¯¯
-                    errors.push(Error::new(pos, ErrorCode::CommaWithoutValueBefore))
+                    //  ¯¯
+                    errors.push(Error::new(
+                        pos,
+                        ErrorCode::ExpectedValue {
+                            found: ",".to_owned(),
+                        },
+                    ))
+                }
+            }
+            Colon => {
+                self.go_to_binding_pow(-1.0); // impossibly low binding power, making it exit everything
+                if let Some(Node::ColonStruct(..)) = self.current_node() {
+                    let right = self.tree.add(Wrapper::new(pos.only_end() + 1));
+                    unpack!(self.current_node_mut() => Some(Node::ColonStruct(list)) => list.push(right));
+                    self.move_down(right)
+                } else if self.points_to_some_node() {
+                    self.make_binary_operator(pos, |left, right| {
+                        Node::ColonStruct(vec![left, right])
+                    });
                 }
             }
             EoF => {}
@@ -326,9 +351,41 @@ impl<Wrapper: NodeWrapping> PrattParser<Wrapper> {
                     self.move_up()
                 }
                 Node::List(..) if 2.0 >= binding_pow => self.move_up(),
+                Node::ColonStruct(..) if -1.0 >= binding_pow => self.move_up(),
+                Node::ChainedOp { additions, .. }
+                    if additions.last().0.binding_pow() >= binding_pow =>
+                {
+                    self.move_up()
+                }
                 _ => return,
             }
         }
+    }
+    /// Makes the current node into a binary operator.
+    /// Tree before:
+    /// ```
+    /// \
+    ///  \
+    ///   ` Node            <--
+    /// ```
+    /// Tree after:
+    /// ```
+    /// \
+    ///  \
+    ///   ` Binary
+    ///     /    \
+    ///  Node    New Node   <--
+    /// ```
+    fn make_binary_operator(
+        &mut self,
+        pos: Position,
+        binary_operator: impl Fn(NodeId, NodeId) -> Node,
+    ) {
+        let left = self.current_node_id().unwrap();
+        let right = self.tree.add(Wrapper::new(pos.only_end() + 1));
+        self.tree[left] = Wrapper::new(pos)
+            .with_node(binary_operator(self.tree.move_to_new_location(left), right));
+        self.move_down(right);
     }
     fn handle_closed_bracket(&mut self, errors: &mut Errors, pos: Position, bracket: &str) {
         while let Some(higher) = self.higher() {

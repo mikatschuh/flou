@@ -45,7 +45,9 @@ pub struct Error {
 }
 #[derive(Clone)]
 pub enum ErrorCode {
-    CommaWithoutValueBefore,
+    ExpectedValue {
+        found: String,
+    },
     UnknownOperator {
         operator: String,
     },
@@ -62,10 +64,6 @@ pub enum ErrorCode {
     // control structure mistakes
     ElseWithNoIf,
     SecondElse,
-    // free
-    ClaimedKeyword {
-        keyword: String,
-    },
     // bracket errors
     NoOpenedBracket {
         closed: String,
@@ -204,13 +202,13 @@ impl fmt::Display for Error {
             f,
             "{}",
             match &self.error {
-                CommaWithoutValueBefore =>
-                    format_error!(self.pos, "a comma needs a value infront of it"),
                 UnknownOperator { operator } => format_error!(
                     self.pos,
                     "the operator {} is not known to the compiler",
                     [operator]
                 ),
+                ExpectedValue { found } =>
+                    format_error!(self.pos, "expected a value found {}", [found]),
                 MissingClosingQuotes { quote } => format_error!(
                     self.pos,
                     "the ending quotes of the quote {} were missing",
@@ -259,12 +257,6 @@ impl fmt::Display for Error {
                 }
                 SecondElse => {
                     format_error!(self.pos, "there was a second else")
-                }
-                ClaimedKeyword { keyword } => {
-                    format_error!(self.pos,
-                        "the keyword {} is claimed, could be that its used in the future, or I just forget abt it",
-                        [keyword], "seriously {} isnt a good variable name", [keyword]
-                    )
                 }
                 NoOpenedBracket { closed } => {
                     format_error!(

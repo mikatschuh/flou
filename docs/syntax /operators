@@ -36,13 +36,13 @@ The operators with the lowest binding power come first, then it gets higher and 
 
 4 Comparison Operators (can be chained):
 
-    4.1 a < b    Smaller
-        a > b    Greater
-        a <= b   Smaller or Equal
-        a >= b   Greater of Equal
-        a != b   Inequality
+    a == b   Equality
+    a != b   Inequality
+    a < b    Smaller
+    a > b    Greater
+    a <= b   Smaller or Equal
+    a >= b   Greater of Equal
 
-    4.2 a == b   Equality
 
 5 Mathematical/Binary Operators:                  | overloadable
 
@@ -59,7 +59,6 @@ The operators with the lowest binding power come first, then it gets higher and 
 
     5.4 -a       Negation
         +a       Double Negation
-
 
     5.5 User Defined Operators get defaulted here, for instance:
         · (dot-product),

@@ -13,16 +13,18 @@ use crate::{
 use std::{collections::HashMap, sync::LazyLock};
 
 pub(super) fn char_is_op(c: char) -> bool {
-    if !c.is_ascii() {
-        return c == '¬';
+    if "¬×÷·¡¿‹›«»•–—¦©†‡ˆ‰".contains(c) {
+        return true;
+    } else if !c.is_ascii() {
+        return false;
     }
-    let ch = c as u8;
+    let c = c as u8;
 
-    (0x0021 <= ch && ch <= 0x002D)        // !"#$%&'()*+,-
-        || ch == 0x002F                   // /
-        || (0x003A <= ch && ch <= 0x0040) // :;<=>?@
-        || (0x005B <= ch && ch <= 0x005E) // [\]
-        || (0x007B <= ch && ch <= 0x007E) // {|}~
+    (0x21 <= c && c <= 0x2D)        // !"#$%&'()*+,-
+        || c == 0x2F                // /
+        || (0x3A <= c && c <= 0x40) // :;<=>?@
+        || (0x5B <= c && c <= 0x5E) // [\]^
+        || (0x7B <= c && c <= 0x7E) // {|}~
 }
 pub(super) fn handled_operator<F: FnMut(&mut Errors, Position, Token)>(
     errors: &mut Errors,

@@ -2,6 +2,7 @@ use std::alloc::{alloc, dealloc, Layout};
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use std::ptr::NonNull;
+use std::slice::Iter;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 // Die innere Struktur, die gezählt wird
@@ -192,10 +193,20 @@ impl<T> NonEmptyVec<T> {
         assert_ne!(self.0.len(), 1);
         self.0.pop().unwrap()
     }
+    pub fn iter(&self) -> Iter<'_, T> {
+        self.0.iter()
+    }
 }
 impl<T, const N: usize> From<[T; N]> for NonEmptyVec<T> {
     fn from(value: [T; N]) -> Self {
         assert_ne!(N, 0);
         Self(Vec::from(value))
+    }
+}
+impl<'a, T> IntoIterator for &'a NonEmptyVec<T> {
+    type IntoIter = std::slice::Iter<'a, T>;
+    type Item = &'a T;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
     }
 }

@@ -7,6 +7,7 @@ use crate::{
         with_written_out_escape_sequences, EscapeSequenceConfusion,
     },
     typing::Type,
+    utilities::NonEmptyVec,
 };
 // use colored::Colorize;
 use std::{
@@ -178,6 +179,55 @@ impl NodeWrapping for NodeWrapper {
                             indentation
                         )
                     },
+                ColonStruct(list) =>
+                    if list.len() == 1 {
+                        format!(
+                            "{}",
+                            list[0]
+                                .get_wrapper(tree)
+                                .display(tree, next_indentation.clone())
+                        )
+                    } else {
+                        let mut list = list.iter();
+                        format!(
+                            "{}{}",
+                            list.next()
+                                .unwrap()
+                                .get_wrapper(tree)
+                                .display(tree, indentation.clone() + "  "),
+                            list.map(|item| {
+                                format!(
+                                    "\n{}: {}",
+                                    indentation.clone(),
+                                    item.get_wrapper(tree)
+                                        .display(tree, indentation.clone() + "  ")
+                                )
+                            })
+                            .collect::<String>(),
+                        )
+                    },
+                ChainedOp { first, additions } => format!(
+                    "Chained  {}{}",
+                    first
+                        .get_wrapper(tree)
+                        .display(tree, indentation.clone() + "   "),
+                    additions
+                        .iter()
+                        .map(|item| {
+                            format!(
+                                "\n{}{}{}{}",
+                                indentation.clone(),
+                                item.0,
+                                (0..3 - item.0.to_string().chars().count())
+                                    .map(|_| " ")
+                                    .collect::<String>(),
+                                item.1
+                                    .get_wrapper(tree)
+                                    .display(tree, indentation.clone() + "   ")
+                            )
+                        })
+                        .collect::<String>(),
+                ),
                 _ => todo!(),
             }
         )
@@ -259,7 +309,7 @@ pub enum Node {
     }, // left op right
     ChainedOp {
         first: NodeId,
-        additions: Vec<(ChainedOp, NodeId)>,
+        additions: NonEmptyVec<(ChainedOp, NodeId)>,
     }, // first op additions[0].0 additions[0].1
     UnaryOp {
         op: UnaryOp,
@@ -370,6 +420,10 @@ impl NodeId {
         &mut tree[self]
     }
     #[inline]
+    pub fn is_non_empty(self, tree: &Tree<impl NodeWrapping>) -> bool {
+        matches!(self.get(tree), Some(..))
+    }
+    #[inline]
     pub fn as_non_null(self, tree: &Tree<impl NodeWrapping>) -> NonNullNodeId {
         assert!(if let Some(..) = self.get(tree) {
             true
@@ -466,6 +520,9 @@ impl<W: NodeWrapping> Tree<W> {
     pub fn add(&mut self, node: W) -> NodeId {
         self.nodes.push(node);
         NodeId(self.nodes.len() - 1)
+    }
+    pub fn move_to_new_location(&mut self, node: NodeId) -> NodeId {
+        self.add(self[node].clone())
     }
     pub fn add_scope(&mut self) -> ScopeId {
         self.scopes.push(Scope::new());
