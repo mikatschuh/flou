@@ -17,17 +17,18 @@ Linked List:
 
 Node {
     content = u32,
-    next | 0 = Some, -> Node
-         | 1 = None
+    next | { Some, node -> Node }
+         | None
 }
 
 Node { content = 0, next = (Some, -)}->
 Node { content = 1, next = (Some, -)}->
 Node { content = 1, next = None }
 
-Boolean ( 0 = true | 1 = false )
+Boolean : Copy ( true | false )
 
-Slice[T] {
+Slice : Copy {
     len ux,
-    ptr -> ( len * T )
+    ptr ->(len * [])
 }
+Slice[a ->(len * []), len ux] = Slice { len, }

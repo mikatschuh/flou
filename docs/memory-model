@@ -57,7 +57,7 @@ The pointer would be stored in the "owned[allocator]" part.
 Now for the UAF problem. Picture the following scenario:
 
     arr = vec [1, 2, 3]
-    second = &arr[1]
+    second = -> arr[1]
 
     arr |> push(4)
 
@@ -69,7 +69,7 @@ when the maximum capacity of the memory location is reached. That would make the
 "second" invalid.
 
     arr = vec [1, 2, 3]     // allocation of the vector
-    second = &arr[1]        // creating reference
+    second = -> arr[1]        // creating reference
 
     arr |> push(4)          // potential reallocate
 
@@ -81,7 +81,7 @@ the responsible reference is only allowed when no other reference to the memory 
 When these rules are applied the following error occurs:
 
     arr = vec [1, 2, 3]
-    second = &arr[1]
+    second = -> arr[1]
 
     arr |> push(4)
 
@@ -103,8 +103,8 @@ the array is read, it would cause an UAF:
     foo(arr)
     x = arr[1] // UAF
 
-When a pointer with responsibility gets moved, it gets moved. It can not further be read, when
-not overwritten with a new value. The process can be thought of as if arr would become uninitialized:
+When a pointer with responsibility gets moved, it can not further be read, when not overwritten with
+a new value. The process can be thought of as if arr would become uninitialized:
 
     arr = vec [1, 2, 3]
     foo(arr)
@@ -121,7 +121,7 @@ It's not always a good thing to move the responsibility. To prevent this multipl
 First, not the value itself, but just a reference to it could be given to some function:
 
     arr = vec [1, 2, 3]
-    foo(&arr) // foo(some_vector -> vec[i32])
+    foo(-> arr) // foo(some_vector -> vec[i32])
     x = arr[1]
 
 Normally this would be a reference to the vectors head, which is stored on the stack. That could also
@@ -135,9 +135,9 @@ be inefficient though because it involves indirection:
 
 A solution is to change the signature of foo:
 
-    foo(some_vector (ptr & len * i32, len ux))
+    foo(some_vector (ptr -> (len * i32), len ux))
 
-Now the function expects a slice. And luckily, "&arr" will be implicitely transformed into a slice, removing
+Now the function expects a slice. And luckily, "-> arr" will be implicitely transformed into a slice, removing
 the indirection and overhead:
 
     some_vector: (ptr = •, len = 3)          - stack
@@ -155,9 +155,3 @@ If a responsibility has to be explicitely destroyed, the build-in function "drop
 
     arr = vec [1, 2, 3]
     drop(arr)
-
-
-POTENTIAL EDGECASES
-
-The classical vector also supports the "pop(...)" operation. But that is no problem as
-the vector will just change the length instead of deallocating the last element.
