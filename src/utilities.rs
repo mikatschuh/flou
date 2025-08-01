@@ -1,5 +1,4 @@
 use std::alloc::{alloc, dealloc, Layout};
-use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use std::ptr::NonNull;
 use std::slice::Iter;
@@ -75,28 +74,6 @@ impl<T, A: CustomAllocator> Rc<T, A> {
 
         Self { ptr, allocator }
     }
-
-    // Innere mutierbare Referenz bekommen (nur bei exklusivem Zugriff)
-    pub fn get_mut(&mut self) -> &mut T {
-        unsafe {
-            // Da wir eine exklusive Referenz auf self haben,
-            // wissen wir, dass niemand sonst Zugriff hat
-            &mut (*self.ptr.as_ptr()).value
-        }
-    }
-
-    // Methode zum Mutieren des inneren Wertes (Interior Mutability)
-    pub fn update<F>(&self, f: F)
-    where
-        F: FnOnce(&mut T),
-    {
-        // Hier nutzen wir die Interior Mutability ohne RefCell
-        unsafe {
-            let value_ptr = &mut (*self.ptr.as_ptr()).value;
-            f(value_ptr);
-        }
-    }
-
     // Aktuelle Anzahl der starken Referenzen
     pub fn strong_count(&self) -> usize {
         unsafe { (*self.ptr.as_ptr()).strong.load(Ordering::SeqCst) }

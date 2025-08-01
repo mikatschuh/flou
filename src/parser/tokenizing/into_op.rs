@@ -1,5 +1,5 @@
 use crate::{
-    error::{Error, ErrorCode, Errors, Position},
+    error::{ErrorCode, Errors, Position},
     parser::{
         tokenizing::{
             binary_op::BinaryOp::{self, *},
@@ -10,7 +10,7 @@ use crate::{
     },
 };
 
-use std::{collections::HashMap, sync::LazyLock};
+use std::{collections::HashMap, sync::LazyLock, vec::IntoIter};
 
 pub(super) fn char_is_op(c: char) -> bool {
     if "¬×÷·¡¿‹›«»•–—¦©†‡ˆ‰".contains(c) {
@@ -26,31 +26,30 @@ pub(super) fn char_is_op(c: char) -> bool {
         || (0x5B <= c && c <= 0x5E) // [\]^
         || (0x7B <= c && c <= 0x7E) // {|}~
 }
-pub(super) fn handled_operator<F: FnMut(&mut Errors, Position, Token)>(
-    errors: &mut Errors,
+pub(super) fn handled_operator(
     op: &str,
     pos: Position,
-    push: &mut F,
+    mut push: impl FnMut(Position, Token),
 ) -> bool {
     if let Some(op) = PREFIX_UNARY_OPS.get(op) {
-        push(errors, pos, Token::PreUnary(op.clone()));
+        push(pos, Token::PreUnary(op.clone()));
     } else if let Some(op) = BINARY_OPS.get(op) {
-        push(errors, pos, Token::Binary(op.clone()));
+        push(pos, Token::Binary(op.clone()));
     } else if let Some(op) = POSTFIX_UNARY_OPS.get(op) {
-        push(errors, pos, Token::PostUnary(op.clone()));
+        push(pos, Token::PostUnary(op.clone()));
     } else if let Some(op) = CHAINED_OPS.get(op) {
-        push(errors, pos, Token::ChainedOp(op.clone()));
+        push(pos, Token::ChainedOp(op.clone()));
     } else {
         return false;
     }
     true
 }
-pub fn split_operator<F: FnMut(&mut Errors, Position, Token)>(
+pub fn split_operator(
     errors: &mut Errors,
-    op: &mut String,
+    op: String,
     pos: Position,
-    push: &mut F,
-) {
+) -> IntoIter<(Position, Token)> {
+    let mut operators = vec![];
     let mut stripped_chars = 0;
     let previous_len = op.len();
     let mut len = previous_len;
@@ -58,7 +57,7 @@ pub fn split_operator<F: FnMut(&mut Errors, Position, Token)>(
         let mut operators_found = 0_usize;
         for i in (stripped_chars == 0) as usize..len {
             let slice = &op[stripped_chars..(len - i) + stripped_chars];
-            if handled_operator(errors, slice, pos, push) {
+            if handled_operator(slice, pos, |pos, token| operators.push((pos, token))) {
                 stripped_chars += slice.len();
                 len = previous_len - stripped_chars;
                 operators_found += 1;
@@ -70,13 +69,9 @@ pub fn split_operator<F: FnMut(&mut Errors, Position, Token)>(
         }
     }
     if len != 0 {
-        errors.push(Error::new(
-            pos,
-            ErrorCode::UnknownOperator {
-                operator: std::mem::take(op),
-            },
-        ))
+        errors.push(pos, ErrorCode::UnknownOperator { op });
     }
+    operators.into_iter()
 }
 pub(super) static PREFIX_UNARY_OPS: LazyLock<HashMap<&'static str, PrefixUnaryOp>> =
     LazyLock::new(|| {

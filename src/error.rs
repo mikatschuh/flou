@@ -15,8 +15,8 @@ impl Errors {
     pub fn empty() -> Self {
         Self(Vec::new())
     }
-    pub fn push(&mut self, error: Error) {
-        self.0.push(error)
+    pub fn push(&mut self, pos: Position, error: ErrorCode) {
+        self.0.push(Error::new(pos, error))
     }
     pub fn concat(&mut self, other: Errors) {
         self.0.extend(other.0.iter().cloned());
@@ -50,7 +50,7 @@ pub enum ErrorCode {
         found: String,
     },
     UnknownOperator {
-        operator: String,
+        op: String,
     },
     MissingClosingQuotes {
         quote: String,
@@ -203,10 +203,10 @@ impl fmt::Display for Error {
             f,
             "{}",
             match &self.error {
-                UnknownOperator { operator } => format_error!(
+                UnknownOperator { op } => format_error!(
                     self.pos,
                     "the operator {} is not known to the compiler",
-                    [operator]
+                    [op]
                 ),
                 ExpectedValue { found } =>
                     format_error!(self.pos, "expected a value found {}", [found]),

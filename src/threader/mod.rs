@@ -2,7 +2,7 @@ mod files;
 mod task;
 
 use crate::{error::CliError, *};
-use crossbeam::{atomic::AtomicCell, deque::Injector};
+use crossbeam::deque::Injector;
 use std::{
     sync::Arc,
     thread::{Builder, JoinHandle},

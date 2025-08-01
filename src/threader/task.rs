@@ -92,7 +92,7 @@ impl Task {
                 let (ast, errors) = parse(&read_to_string(path)?, path);
                 println!(
                     "{}\n{}\n\nparsed in: {}",
-                    errors,
+                    *errors,
                     ast,
                     format_time(now.elapsed().as_nanos()).bold(),
                 );

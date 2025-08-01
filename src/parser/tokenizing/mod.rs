@@ -43,7 +43,7 @@ impl Tokenizer {
         &mut self,
         errors: &mut Errors,
         c: char,
-        push: &mut impl FnMut(&mut Errors, Position, Token),
+        push: &mut impl FnMut(Position, Token),
     ) {
         if !self.comment(errors, c, push) && !self.quote(errors, c, push) {
             match c {
@@ -66,42 +66,42 @@ impl Tokenizer {
                 '(' => {
                     self.finish(errors, push);
                     self.pos.set_new_start();
-                    push(errors, self.pos, Token::OpenBracket { squared: false });
+                    push(self.pos, Token::OpenBracket { squared: false });
                 }
                 ')' => {
                     self.finish(errors, push);
                     self.pos.set_new_start();
-                    push(errors, self.pos, Token::ClosedBracket { squared: false })
+                    push(self.pos, Token::ClosedBracket { squared: false })
                 }
                 '[' => {
                     self.finish(errors, push);
                     self.pos.set_new_start();
-                    push(errors, self.pos, Token::OpenBracket { squared: true })
+                    push(self.pos, Token::OpenBracket { squared: true })
                 }
                 ']' => {
                     self.finish(errors, push);
                     self.pos.set_new_start();
-                    push(errors, self.pos, Token::ClosedBracket { squared: true })
+                    push(self.pos, Token::ClosedBracket { squared: true })
                 }
                 '{' => {
                     self.finish(errors, push);
                     self.pos.set_new_start();
-                    push(errors, self.pos, Token::OpenCurly)
+                    push(self.pos, Token::OpenCurly)
                 }
                 '}' => {
                     self.finish(errors, push);
                     self.pos.set_new_start();
-                    push(errors, self.pos, Token::ClosedCurly)
+                    push(self.pos, Token::ClosedCurly)
                 }
                 ',' => {
                     self.finish(errors, push);
                     self.pos.set_new_start();
-                    push(errors, self.pos, Token::Comma)
+                    push(self.pos, Token::Comma)
                 }
                 ':' => {
                     self.finish(errors, push);
                     self.pos.set_new_start();
-                    push(errors, self.pos, Token::Colon)
+                    push(self.pos, Token::Colon)
                 }
                 _ => match into_op::char_is_op(c) {
                     true => match self.state {
@@ -136,12 +136,7 @@ impl Tokenizer {
             _ => self.pos.next_char(),
         }
     }
-    fn comment(
-        &mut self,
-        _: &mut Errors,
-        c: char,
-        _: &mut impl FnMut(&mut Errors, Position, Token),
-    ) -> bool {
+    fn comment(&mut self, _: &mut Errors, c: char, _: &mut impl FnMut(Position, Token)) -> bool {
         if let State::Comment(ref mut comment) = self.state {
             match c {
                 '\n' => {
@@ -156,12 +151,7 @@ impl Tokenizer {
             false
         }
     }
-    fn quote(
-        &mut self,
-        errors: &mut Errors,
-        c: char,
-        push: &mut impl FnMut(&mut Errors, Position, Token),
-    ) -> bool {
+    fn quote(&mut self, _: &mut Errors, c: char, push: &mut impl FnMut(Position, Token)) -> bool {
         if let State::Quote {
             // return from the function - no more processing except pushing to quote
             ref mut escape_sequence,
@@ -206,7 +196,6 @@ impl Tokenizer {
                     '\\' => *escape_sequence = True,
                     '"' => {
                         push(
-                            errors,
                             self.pos,
                             Token::Quote {
                                 quote: std::mem::take(quote),
@@ -223,57 +212,49 @@ impl Tokenizer {
             false
         }
     }
-    pub fn finish(
-        &mut self,
-        errors: &mut Errors,
-        push: &mut impl FnMut(&mut Errors, Position, Token),
-    ) {
+    pub fn finish(&mut self, errors: &mut Errors, push: &mut impl FnMut(Position, Token)) {
         match self.state {
             State::Id(ref mut id) => {
                 if id.len() != 0 {
-                    push(errors, self.pos - 1, Token::Val(std::mem::take(id)))
+                    push(self.pos - 1, Token::Val(std::mem::take(id)))
                 }
                 self.state = State::Nothing;
             }
             State::Op(ref mut op) => {
                 if op.len() != 0 {
                     if let Some(op) = into_op::PREFIX_UNARY_OPS.get(op.as_str()) {
-                        push(errors, self.pos - 1, Token::PreUnary(*op))
+                        push(self.pos - 1, Token::PreUnary(*op))
                     } else if let Some(op) = into_op::BINARY_OPS.get(op.as_str()) {
-                        push(errors, self.pos - 1, Token::Binary(*op))
+                        push(self.pos - 1, Token::Binary(*op))
                     } else if let Some(op) = into_op::POSTFIX_UNARY_OPS.get(op.as_str()) {
-                        push(errors, self.pos - 1, Token::PostUnary(*op))
+                        push(self.pos - 1, Token::PostUnary(*op))
                     } else if let Some(op) = into_op::CHAINED_OPS.get(op.as_str()) {
-                        push(errors, self.pos - 1, Token::ChainedOp(*op))
+                        push(self.pos - 1, Token::ChainedOp(*op))
                     } else {
-                        push(errors, self.pos - 1, Token::UnknownOp(std::mem::take(op)))
+                        push(self.pos - 1, Token::UnknownOp(std::mem::take(op)))
                     }
                 }
                 self.state = State::Nothing;
             }
-            State::Quote { ref mut quote, .. } => errors.push(Error::new(
+            State::Quote { ref mut quote, .. } => errors.push(
                 self.pos.one_line_higher(),
                 ErrorCode::MissingClosingQuotes {
                     quote: with_written_out_escape_sequences(quote),
                 },
-            )),
+            ),
             _ => {}
         }
     }
-    pub fn end_of_file(
-        &mut self,
-        errors: &mut Errors,
-        push: &mut impl FnMut(&mut Errors, Position, Token),
-    ) {
+    pub fn end_of_file(&mut self, errors: &mut Errors, push: &mut impl FnMut(Position, Token)) {
         if let State::Quote { ref quote, .. } = self.state {
-            errors.push(Error::new(
+            errors.push(
                 self.pos.one_line_higher(),
                 ErrorCode::MissingClosingQuotes {
                     quote: with_written_out_escape_sequences(quote),
                 },
-            ))
+            )
         }
-        push(errors, self.pos, Token::EoF)
+        push(self.pos, Token::EoF)
     }
 }
 pub fn with_written_out_escape_sequences(string: &str) -> String {
