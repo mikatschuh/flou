@@ -42,53 +42,73 @@ impl Pointer {
         unpack!(self => Pointer::Node(id) => id)
     }
 }
-// Controlling the parsers pointer stack
-impl<Wrapper: NodeWrapping> PrattParser<Wrapper> {
+pub trait TreeNavi<Wrapper: NodeWrapping> {
     /// Obtains the current layer.
+    fn current(&self) -> Pointer;
+    /// Obtains the current node id.
+    fn current_node_id(&self) -> Option<NodeId>;
+    /// Obtains the current node.
+    fn current_node(&self) -> Option<&Node>;
+    /// Obtains the current node as mutable reference.
+    fn current_node_mut(&mut self) -> Option<&mut Node>;
+    /// Obtains the current wrapper.
+    fn current_wrapper(&self) -> Option<&Wrapper>;
+    /// Obtains a mutable reference to the current wrapper.
+    fn current_wrapper_mut(&mut self) -> Option<&mut Wrapper>;
+    /// Returns the upper layer if there's one.
+    fn points_to_some_node(&self) -> bool;
+    fn higher(&self) -> Option<Pointer>;
+    /// Returns the upper layer's id if there's one.
+    fn higher_node_id(&self) -> Option<NonNullNodeId>;
+    /// Returns the upper layer's node if there's one.
+    fn higher_node(&self) -> Option<&Node>;
+    /// Makes the upper layer the new layer.
+    fn move_up(&mut self);
+    /// Moves down into a lower node.
+    fn move_down(&mut self, new: NodeId);
+    /// Moves down into a lower scope.
+    fn move_into_new_scope(&mut self, new: ScopeId);
+}
+// Controlling the parsers pointer stack
+impl<Wrapper: NodeWrapping> TreeNavi<Wrapper> for PrattParser<Wrapper> {
     #[inline]
-    pub fn current(&self) -> Pointer {
+    fn current(&self) -> Pointer {
         *self.parse_stack.layers.last()
     }
-    /// Obtains the current node id.
     #[inline]
-    pub fn current_node_id(&self) -> Option<NodeId> {
+    fn current_node_id(&self) -> Option<NodeId> {
         if let Pointer::Node(node) = self.parse_stack.layers.last() {
             Some(*node)
         } else {
             None
         }
     }
-    /// Obtains the current node.
     #[inline]
-    pub fn current_node(&self) -> Option<&Node> {
+    fn current_node(&self) -> Option<&Node> {
         if let Pointer::Node(node) = self.parse_stack.layers.last() {
             node.get(&self.tree)
         } else {
             None
         }
     }
-
-    /// Obtains the current node as mutable reference.
     #[inline]
-    pub fn current_node_mut(&mut self) -> Option<&mut Node> {
+    fn current_node_mut(&mut self) -> Option<&mut Node> {
         if let Pointer::Node(node) = self.parse_stack.layers.last() {
             node.get_mut(&mut self.tree).as_mut()
         } else {
             None
         }
     }
-    /// Obtains the current wrapper.
     #[inline]
-    pub fn current_wrapper(&self) -> Option<&Wrapper> {
+    fn current_wrapper(&self) -> Option<&Wrapper> {
         if let Pointer::Node(node) = self.parse_stack.layers.last() {
             Some(node.get_wrapper(&self.tree))
         } else {
             None
         }
     }
-    /// Obtains a mutable reference to the current wrapper.
     #[inline]
-    pub fn current_wrapper_mut(&mut self) -> Option<&mut Wrapper> {
+    fn current_wrapper_mut(&mut self) -> Option<&mut Wrapper> {
         if let Pointer::Node(node) = self.parse_stack.layers.last() {
             Some(node.get_wrapper_mut(&mut self.tree))
         } else {
@@ -96,49 +116,43 @@ impl<Wrapper: NodeWrapping> PrattParser<Wrapper> {
         }
     }
     #[inline]
-    pub fn points_to_some_node(&self) -> bool {
+    fn points_to_some_node(&self) -> bool {
         if let Pointer::Node(node) = self.parse_stack.layers.last() {
             node.is_non_empty(&self.tree)
         } else {
             false
         }
     }
-    /// Returns the upper layer if there's one.
     #[inline]
-    pub fn higher(&self) -> Option<Pointer> {
+    fn higher(&self) -> Option<Pointer> {
         self.parse_stack.layers.penultimate().copied()
     }
-    /// Returns the upper layer's id if there's one.
     #[inline]
-    pub fn higher_node_id(&self) -> Option<NonNullNodeId> {
+    fn higher_node_id(&self) -> Option<NonNullNodeId> {
         if let Some(Pointer::Node(node)) = self.parse_stack.layers.penultimate().copied() {
             Some(node.as_non_null(&self.tree))
         } else {
             None
         }
     }
-    /// Returns the upper layer's node if there's one.
     #[inline]
-    pub fn higher_node(&self) -> Option<&Node> {
+    fn higher_node(&self) -> Option<&Node> {
         if let Some(Pointer::Node(node)) = self.parse_stack.layers.penultimate().copied() {
             node.get(&self.tree)
         } else {
             None
         }
     }
-    /// Makes the upper layer the new layer.
     #[inline]
-    pub fn move_up(&mut self) {
+    fn move_up(&mut self) {
         self.parse_stack.layers.pop();
     }
-    /// Moves down into a lower node.
     #[inline]
-    pub fn move_down(&mut self, new: NodeId) {
+    fn move_down(&mut self, new: NodeId) {
         self.parse_stack.layers.push(Pointer::Node(new))
     }
-    /// Moves down into a lower scope.
     #[inline]
-    pub fn move_into_new_scope(&mut self, new: ScopeId) {
+    fn move_into_new_scope(&mut self, new: ScopeId) {
         self.parse_stack.layers.push(Pointer::Scope(new))
     }
 }

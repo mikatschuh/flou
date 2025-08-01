@@ -3,7 +3,7 @@ use num::BigUint;
 use crate::{
     error::Position,
     parser::tokenizing::{
-        binary_op::BinaryOp, chained_op::ChainedOp, num::NumberParsingNote, unary_op::UnaryOp,
+        binary_op::BinaryOp, chained_op::ChainedOp, unary_op::UnaryOp,
         with_written_out_escape_sequences, EscapeSequenceConfusion,
     },
     typing::Type,
@@ -233,6 +233,7 @@ impl NodeWrapping for NodeWrapper {
         )
     }
 }
+use crate::parser::num::NumberParsingNote;
 #[derive(Debug, Clone, PartialEq)]
 pub enum Note {
     NumberParsingNote(NumberParsingNote),

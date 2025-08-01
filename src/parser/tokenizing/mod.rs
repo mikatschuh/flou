@@ -2,7 +2,6 @@ pub mod binary_op;
 pub mod chained_op;
 pub(super) mod into_op;
 pub(super) mod keyword;
-pub mod num;
 pub mod unary_op;
 
 use crate::{error::*, parser::Token};

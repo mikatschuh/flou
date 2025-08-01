@@ -3,6 +3,7 @@ use std::any::Any;
 use std::error;
 use std::fmt;
 use std::ops::Add;
+use std::ops::BitOr;
 use std::ops::Sub;
 
 pub struct Errors(Vec<Error>);
@@ -403,6 +404,15 @@ impl Sub<usize> for Position {
     type Output = Self;
     fn sub(mut self, rhs: usize) -> Self::Output {
         self.end_char -= rhs;
+        self
+    }
+}
+impl BitOr<Position> for Position {
+    type Output = Position;
+    /// combines the two positions
+    fn bitor(mut self, rhs: Position) -> Self::Output {
+        self.end_line = rhs.end_line;
+        self.end_char = rhs.end_char;
         self
     }
 }
