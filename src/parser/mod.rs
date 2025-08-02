@@ -283,6 +283,27 @@ pub fn process<Wrapper: NodeWrapping>(
                     return;
                 }
             }
+            if matches!(
+                op,
+                BinaryOp::And | BinaryOp::Or | BinaryOp::Nand | BinaryOp::Nor
+            ) {
+                let mut not_pos = pos;
+                let mut i = 0;
+                pop_as_long_as!(parser.buffer() => (pos, BufferedNot) =>{ not_pos = pos; i += 1 });
+                if i > 0 {
+                    parser.buffer().push((
+                        not_pos | pos,
+                        Binary(match op {
+                            BinaryOp::And if i.is_odd() => BinaryOp::Nand,
+                            BinaryOp::Or if i.is_odd() => BinaryOp::Nor,
+                            BinaryOp::Nand if i.is_odd() => BinaryOp::And,
+                            BinaryOp::Nor if i.is_odd() => BinaryOp::Or,
+                            _ => op,
+                        }),
+                    ));
+                    return;
+                }
+            }
             if parser.points_to_some_node() {
                 parser.empty_buffer().for_each(|item| process(parser, item));
 

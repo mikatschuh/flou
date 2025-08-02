@@ -15,9 +15,9 @@ pub enum BinaryOp {
     AddAssign, // a += b
     SubAssign, // a -= b
 
-    BitwiseAndAssign, // a &= b
-    BitwiseOrAssign,  // a |= b
-    BitwiseXorAssign, // a >|= b
+    BitAndAssign, // a &= b
+    BitOrAssign,  // a |= b
+    BitXorAssign, // a >|= b
 
     Swap, // a =|= b
 
@@ -26,9 +26,9 @@ pub enum BinaryOp {
     And,  // a && b
     Nand, // a !&& b
 
-    BitwiseAnd, // a & b
-    BitwiseOr,  // a | b
-    BitwiseXor, // a >| b
+    BitAnd, // a & b
+    BitOr,  // a | b
+    BitXor, // a >| b
 
     Add, // a + b
     Sub, // a - b
@@ -63,9 +63,9 @@ impl fmt::Display for BinaryOp {
                 AddAssign => "+=",
                 SubAssign => "-=",
 
-                BitwiseAndAssign => "&=",
-                BitwiseOrAssign => "|=",
-                BitwiseXorAssign => ">|=",
+                BitAndAssign => "&=",
+                BitOrAssign => "|=",
+                BitXorAssign => ">|=",
 
                 Swap => "=|=",
 
@@ -74,9 +74,9 @@ impl fmt::Display for BinaryOp {
                 And => "&&",
                 Nand => "!&&",
 
-                BitwiseOr => "|",
-                BitwiseAnd => "&",
-                BitwiseXor => ">|",
+                BitOr => "|",
+                BitAnd => "&",
+                BitXor => ">|",
 
                 Add => "+",
                 Sub => "-",
@@ -110,9 +110,9 @@ impl BindingPow for BinaryOp {
             AddAssign => 1.0,
             SubAssign => 1.0,
 
-            BitwiseAndAssign => 1.0,
-            BitwiseOrAssign => 1.0,
-            BitwiseXorAssign => 1.0,
+            BitAndAssign => 1.0,
+            BitOrAssign => 1.0,
+            BitXorAssign => 1.0,
 
             Swap => 1.0,
 
@@ -124,9 +124,9 @@ impl BindingPow for BinaryOp {
 
             // Smaller / Greater / SmallerOrEqual / GreaterOrEqual => 4.1
             // Equal / NotEqual => 4.2
-            BitwiseOr => 5.1,
-            BitwiseAnd => 5.1,
-            BitwiseXor => 5.1,
+            BitOr => 5.1,
+            BitAnd => 5.1,
+            BitXor => 5.1,
 
             Add => 5.2,
             Sub => 5.2,
