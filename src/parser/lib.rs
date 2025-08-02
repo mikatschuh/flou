@@ -1,3 +1,5 @@
+use std::{mem::take, vec::IntoIter};
+
 use crate::{
     error::{ErrorCode, Errors, Position},
     parser::{
@@ -49,8 +51,12 @@ impl<Wrapper: NodeWrapping> Parser<Wrapper> for PrattParser<Wrapper> {
         value_to_node(string, pos, &mut self.tree)
     }
     #[inline]
-    fn buffer(&mut self, token: Token, pos: Position) {
-        self.token_buffer.push((pos, token))
+    fn buffer(&mut self) -> &mut Vec<(Position, Token)> {
+        &mut self.token_buffer
+    }
+    #[inline]
+    fn empty_buffer(&mut self) -> IntoIter<(Position, Token)> {
+        take(&mut self.token_buffer).into_iter()
     }
     fn add_val(&mut self, val: Wrapper) {
         loop {

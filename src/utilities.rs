@@ -187,3 +187,13 @@ impl<'a, T> IntoIterator for &'a NonEmptyVec<T> {
         self.0.iter()
     }
 }
+#[macro_export]
+macro_rules! pop_as_long_as {
+    ($arr:expr => $pattern:pat => $code:expr) => {
+        while let Some($pattern) = $arr.last() {
+            if let $pattern = $arr.pop().unwrap() {
+                $code
+            }
+        }
+    };
+}

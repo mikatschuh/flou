@@ -13,6 +13,7 @@ mod parser;
 mod threader;
 mod tree;
 mod typing;
+#[macro_use]
 mod utilities;
 mod vms;
 /*
