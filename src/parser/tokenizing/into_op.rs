@@ -114,6 +114,8 @@ pub(super) static BINARY_OPS: LazyLock<HashMap<&'static str, BinaryOp>> = LazyLo
         (">||", Xor(false)),
         ("!>||", Xor(true)),
         (":=", Write),
+        (">|=", XorAssign(false)),
+        ("!>|=", XorAssign(true)),
         ("=|=", Swap),
     ])
 });

@@ -188,24 +188,21 @@ pub fn process<Wrapper: NodeWrapping>(
     match token {
         UnknownOp(op) => {
             split_operator(state.errors(), op, pos)
+                .rev()
                 .for_each(|(pos, token)| token_stream.push((pos, token)));
             return;
         }
         Prefix(op) => {
             let op: UnaryOp = op.into();
             if matches!(op, UnaryOp::Neg | UnaryOp::Pos) && state.points_to_some_node() {
-                process(
-                    state,
-                    (
-                        pos,
-                        Infix(if op == UnaryOp::Pos {
-                            BinaryOp::Add
-                        } else {
-                            BinaryOp::Sub
-                        }),
-                    ),
-                    token_stream,
-                );
+                token_stream.push((
+                    pos,
+                    Infix(if op == UnaryOp::Pos {
+                        BinaryOp::Add
+                    } else {
+                        BinaryOp::Sub
+                    }),
+                ));
                 return; // a -/+
                         //   ¯¯¯
             } else if let UnaryOp::Not = op {
@@ -216,70 +213,38 @@ pub fn process<Wrapper: NodeWrapping>(
                             invertion = !invertion;
                             continue;
                         }
-                        Infix(BinaryOp::Or(inverted)) => process(
-                            state,
-                            (pos | next_pos, Infix(BinaryOp::Or(invertion != inverted))),
-                            token_stream,
-                        ),
-                        Infix(BinaryOp::Xor(inverted)) => process(
-                            state,
-                            (pos | next_pos, Infix(BinaryOp::Xor(invertion != inverted))),
-                            token_stream,
-                        ),
-                        Infix(BinaryOp::And(inverted)) => process(
-                            state,
-                            (pos | next_pos, Infix(BinaryOp::And(invertion != inverted))),
-                            token_stream,
-                        ),
-                        Infix(BinaryOp::BitOr(inverted)) => process(
-                            state,
-                            (
-                                pos | next_pos,
-                                Infix(BinaryOp::BitOr(invertion != inverted)),
-                            ),
-                            token_stream,
-                        ),
-                        Infix(BinaryOp::BitXor(inverted)) => process(
-                            state,
-                            (
-                                pos | next_pos,
-                                Infix(BinaryOp::BitXor(invertion != inverted)),
-                            ),
-                            token_stream,
-                        ),
-                        Infix(BinaryOp::BitAnd(inverted)) => process(
-                            state,
-                            (
-                                pos | next_pos,
-                                Infix(BinaryOp::BitAnd(invertion != inverted)),
-                            ),
-                            token_stream,
-                        ),
-                        Infix(BinaryOp::OrAssign(inverted)) => process(
-                            state,
-                            (
-                                pos | next_pos,
-                                Infix(BinaryOp::OrAssign(invertion != inverted)),
-                            ),
-                            token_stream,
-                        ),
-                        Infix(BinaryOp::XorAssign(inverted)) => process(
-                            state,
-                            (
-                                pos | next_pos,
-                                Infix(BinaryOp::XorAssign(invertion != inverted)),
-                            ),
-                            token_stream,
-                        ),
-                        Infix(BinaryOp::AndAssign(inverted)) => process(
-                            state,
-                            (
-                                pos | next_pos,
-                                Infix(BinaryOp::AndAssign(invertion != inverted)),
-                            ),
-                            token_stream,
-                        ),
+                        Infix(BinaryOp::Or(inverted)) => token_stream
+                            .push((pos | next_pos, Infix(BinaryOp::Or(invertion != inverted)))),
+                        Infix(BinaryOp::Xor(inverted)) => token_stream
+                            .push((pos | next_pos, Infix(BinaryOp::Xor(invertion != inverted)))),
+                        Infix(BinaryOp::And(inverted)) => token_stream
+                            .push((pos | next_pos, Infix(BinaryOp::And(invertion != inverted)))),
+                        Infix(BinaryOp::BitOr(inverted)) => token_stream.push((
+                            pos | next_pos,
+                            Infix(BinaryOp::BitOr(invertion != inverted)),
+                        )),
+                        Infix(BinaryOp::BitXor(inverted)) => token_stream.push((
+                            pos | next_pos,
+                            Infix(BinaryOp::BitXor(invertion != inverted)),
+                        )),
+                        Infix(BinaryOp::BitAnd(inverted)) => token_stream.push((
+                            pos | next_pos,
+                            Infix(BinaryOp::BitAnd(invertion != inverted)),
+                        )),
+                        Infix(BinaryOp::OrAssign(inverted)) => token_stream.push((
+                            pos | next_pos,
+                            Infix(BinaryOp::OrAssign(invertion != inverted)),
+                        )),
+                        Infix(BinaryOp::XorAssign(inverted)) => token_stream.push((
+                            pos | next_pos,
+                            Infix(BinaryOp::XorAssign(invertion != inverted)),
+                        )),
+                        Infix(BinaryOp::AndAssign(inverted)) => token_stream.push((
+                            pos | next_pos,
+                            Infix(BinaryOp::AndAssign(invertion != inverted)),
+                        )),
                         _ => {
+                            token_stream.push((next_pos, next));
                             let operand = state.add(Wrapper::new(pos.only_end() + 1));
                             let unary_op = Wrapper::new(pos).with_node(Node::UnaryOp {
                                 op: UnaryOp::Not,
@@ -287,13 +252,10 @@ pub fn process<Wrapper: NodeWrapping>(
                             });
                             state.add_val(unary_op);
                             state.move_down(operand);
-                            process(state, (next_pos, next), token_stream);
-                            return;
                         }
                     }
                     return;
                 }
-                return;
             }
             let operand = state.add(Wrapper::new(pos.only_end() + 1));
             let unary_op = Wrapper::new(pos).with_node(Node::UnaryOp { op, operand });
@@ -315,7 +277,7 @@ pub fn process<Wrapper: NodeWrapping>(
                     UnaryOp::Increment => PrefixUnaryOp::Pos,
                     _ => PrefixUnaryOp::Neg,
                 };
-                (0..2).for_each(|_| process(state, (pos, Prefix(unary_op)), token_stream));
+                (0..2).for_each(|_| token_stream.push((pos, Prefix(unary_op))));
                 return; // { ++/--
                         //   ¯¯¯¯¯
             }
