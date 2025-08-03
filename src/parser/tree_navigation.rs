@@ -22,7 +22,7 @@ macro_rules! unpack {
 }
 
 pub struct ParseStack {
-    layers: NonEmptyVec<Pointer>,
+    pub layers: NonEmptyVec<Pointer>,
 }
 impl ParseStack {
     pub fn new(base_layer: Pointer) -> Self {

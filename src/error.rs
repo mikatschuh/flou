@@ -49,6 +49,9 @@ pub enum ErrorCode {
     ExpectedValue {
         found: String,
     },
+    DidntExpectValue {
+        found: String,
+    },
     UnknownOperator {
         op: String,
     },
@@ -210,6 +213,8 @@ impl fmt::Display for Error {
                 ),
                 ExpectedValue { found } =>
                     format_error!(self.pos, "expected a value found {}", [found]),
+                DidntExpectValue { found } =>
+                    format_error!(self.pos, "didn't expect a value found {}", [found]),
                 MissingClosingQuotes { quote } => format_error!(
                     self.pos,
                     "the ending quotes of the quote {} were missing",

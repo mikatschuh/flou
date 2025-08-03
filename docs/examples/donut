@@ -40,7 +40,7 @@ main() {
 
                 "·-+*oag3&8"[brightness * brightness]
 
-            } else if dst > 100 return ' '
+            } else if dst > 100 return " "
             else p += dst * d
         }
     }

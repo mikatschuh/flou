@@ -25,14 +25,14 @@ impl fmt::Display for ChainedOp {
     }
 }
 impl BindingPow for ChainedOp {
-    fn binding_pow(self) -> f32 {
+    fn binding_pow(self) -> i8 {
         match self {
-            Equal => 4.0,          // a == b
-            NonEqual => 4.0,       // a != b
-            Smaller => 4.0,        // a < b
-            GreaterOrEqual => 4.0, // a >= b
-            Greater => 4.0,        // a > b
-            SmallerOrEqual => 4.0, // a <= b
+            Equal => 7,          // a == b
+            NonEqual => 7,       // a != b
+            Smaller => 7,        // a < b
+            GreaterOrEqual => 7, // a >= b
+            Greater => 7,        // a > b
+            SmallerOrEqual => 7, // a <= b
         }
     }
 }

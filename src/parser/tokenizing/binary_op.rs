@@ -1,5 +1,5 @@
 pub trait BindingPow {
-    fn binding_pow(self) -> f32;
+    fn binding_pow(self) -> i8;
 }
 
 #[derive(Clone, PartialEq, Debug, Copy)]
@@ -104,33 +104,32 @@ impl fmt::Display for BinaryOp {
 }
 use BinaryOp::*;
 impl BindingPow for BinaryOp {
-    fn binding_pow(self) -> f32 {
+    fn binding_pow(self) -> i8 {
         match self {
-            Equation => 0.0, // a = b
+            Equation => 1, // a = b
 
             Write | OrAssign(..) | XorAssign(..) | AndAssign(..) | AddAssign | SubAssign
-            | MulAssign | DivAssign | ModAssign | Swap => 1.0,
+            | MulAssign | DivAssign | ModAssign | Swap => 2,
 
-            // Comma => 2.0
-            Or(..) => 3.1,
-            Xor(..) => 3.2,
-            And(..) => 3.3,
+            // Comma => 3
+            Or(..) => 4,
+            Xor(..) => 5,
+            And(..) => 6,
 
             // Smaller / Greater / SmallerOrEqual / GreaterOrEqual => 4.1
             // Equal / NotEqual => 4.2
-            BitOr(..) => 5.11,
-            BitXor(..) => 5.12,
-            BitAnd(..) => 5.13,
+            BitOr(..) => 8,
+            BitXor(..) => 9,
+            BitAnd(..) => 10,
 
-            Add | Sub => 5.2,
+            Add | Sub => 11,
 
-            Mul | Div | Mod => 5.3,
-            // Neg => 5.4
-            // Pos => 5.4
-            Dot | Cross | Power => 5.5,
+            Mul | Div | Mod => 12,
+            // Neg => 13
+            // Pos => 13
+            Dot | Cross | Power => 14,
 
-            // CustomOperators => 5.5
-            Index | App => 10.0,
+            Index | App => 19,
         }
     }
 }

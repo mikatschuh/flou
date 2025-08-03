@@ -1,5 +1,3 @@
-use std::{mem::take, vec::IntoIter};
-
 use crate::{
     error::{ErrorCode, Errors, Position},
     parser::{
@@ -9,7 +7,7 @@ use crate::{
         Getting, Parser, PrattParser, Token,
     },
     tree::{Node, NodeId, NodeWrapping, ScopeId},
-    Formatter,
+    unpack, Formatter,
 };
 impl<Wrapper: NodeWrapping> Getting<Wrapper> for PrattParser<Wrapper> {
     fn formatter(&self) -> Formatter {
@@ -51,44 +49,60 @@ impl<Wrapper: NodeWrapping> Parser<Wrapper> for PrattParser<Wrapper> {
         value_to_node(string, pos, &mut self.tree)
     }
     fn add_val(&mut self, val: Wrapper) {
-        loop {
+        if self.points_to_some_node() {
+            self.go_to_binding_pow(0);
+            match self.current_node().unwrap() {
+                Node::Statements(..) => {
+                    let id = self.tree.add(val);
+                    unpack!(self.current_node_mut() => Some(Node::Statements(content)) => content.push(id));
+                    self.move_down(id);
+                }
+                _ => {
+                    self.make_binary_operator(val.pos(), |left, right| {
+                        Node::Statements(vec![left, right])
+                    });
+                    *self.current_wrapper_mut().unwrap() = val
+                }
+            }
+        } else {
             match self.current() {
-                Pointer::Node(node) => match self.tree[node].node() {
-                    Some(_) => self.move_up(),
-                    None => {
-                        if let Some(higher) = self.higher_node_id() {
-                            higher
-                                .get_wrapper_mut(&mut self.tree)
-                                .pos_mut()
-                                .set_end(val.pos().end_line, val.pos().end_char);
-                        }
-                        self.tree[node] = val;
-                        return;
+                Pointer::Node(node) => {
+                    if let Some(higher) = self.higher_node_id() {
+                        higher
+                            .get_wrapper_mut(&mut self.tree)
+                            .pos_mut()
+                            .set_end(val.pos().end_line, val.pos().end_char);
                     }
-                },
+                    self.tree[node] = val;
+                }
                 Pointer::Scope(scope) => {
                     let id = self.tree.add(val);
                     self.tree[scope].push(id);
                     self.move_down(id);
-                    return;
                 }
             }
         }
     }
-    fn go_to_binding_pow(&mut self, binding_pow: f32) {
+    fn go_to_binding_pow(&mut self, binding_pow: i8) {
         while let Some(higher) = self.higher_node() {
             match higher {
-                Node::BinaryOp { op, .. } if op.binding_pow() >= binding_pow => self.move_up(),
+                Node::BinaryOp { op, .. }
+                    if op.binding_pow() >= binding_pow
+                        && !matches!(op, BinaryOp::App | BinaryOp::Index) =>
+                {
+                    self.move_up()
+                }
                 Node::UnaryOp { op, .. } if op.binding_pow() >= binding_pow && !op.is_postfix() => {
                     self.move_up()
                 }
-                Node::List(..) if 2.0 >= binding_pow => self.move_up(),
-                Node::ColonStruct(..) if -1.0 >= binding_pow => self.move_up(),
+                Node::List(..) if 3 >= binding_pow => self.move_up(),
+                Node::ColonStruct(..) if 0 >= binding_pow => self.move_up(),
                 Node::ChainedOp { additions, .. }
                     if additions.last().0.binding_pow() >= binding_pow =>
                 {
                     self.move_up()
                 }
+                Node::Statements(..) if 0 >= binding_pow => self.move_up(),
                 _ => return,
             }
         }
@@ -111,7 +125,7 @@ impl<Wrapper: NodeWrapping> Parser<Wrapper> for PrattParser<Wrapper> {
                     match node.get(&self.tree).unwrap() // unwrapping is ok since this is the higher layer
                 {
                     Node::BinaryOp { op, .. }
-                    if (*op == BinaryOp::App && bracket == ")" || *op == BinaryOp::Index && bracket == "]")=> {
+                    if (*op == BinaryOp::App && bracket == ")") || (*op == BinaryOp::Index && bracket == "]")=> {
                         self.move_up();
                         self.current_wrapper_mut()
                             .unwrap()
@@ -135,7 +149,7 @@ impl<Wrapper: NodeWrapping> Parser<Wrapper> for PrattParser<Wrapper> {
                         return;
                     }
                     Node::Brackets { squared, .. }
-                        if *squared && bracket == "]" || !squared && bracket == ")" =>
+                        if (*squared && bracket == "]") || (!squared && bracket == ")") =>
                     {
                         self.move_up();
                         self.current_wrapper_mut()

@@ -30,9 +30,9 @@ use crate::{
 };
 use colored::{ColoredString, Colorize};
 
+mod debug;
 mod lib;
 pub mod num;
-
 pub mod tokenizing;
 mod tree_navigation;
 use tree_navigation::*;
@@ -50,7 +50,9 @@ pub fn parse(text: &str, path: &'static Path) -> (String, Rc<Errors>) {
     while let Some(token) = tokens.pop() {
         process(&mut parser, token, &mut tokens);
     }
-    (parser.tree().to_string(), errors)
+    let tree = parser.tree();
+    //println!("{:?}", tree);
+    (tree.to_string(), errors)
 }
 #[derive(PartialEq, Debug, Clone)]
 pub enum Token {
@@ -155,7 +157,7 @@ pub trait Parser<Wrapper: NodeWrapping>: TreeNavi<Wrapper> + Getting<Wrapper> {
     fn value_to_node(&mut self, string: String, pos: Position) -> Wrapper;
     fn add_val(&mut self, val: Wrapper);
     /// Moves up until its at the right height. It will only ever move into nodes.
-    fn go_to_binding_pow(&mut self, binding_pow: f32);
+    fn go_to_binding_pow(&mut self, binding_pow: i8);
     /// Makes the current node into a binary operator.
     /// Tree before:
     /// ```
@@ -178,8 +180,8 @@ pub trait Parser<Wrapper: NodeWrapping>: TreeNavi<Wrapper> + Getting<Wrapper> {
     );
     fn handle_closed_bracket(&mut self, pos: Position, bracket: &str);
 }
-pub fn process<Wrapper: NodeWrapping>(
-    state: &mut impl Parser<Wrapper>,
+pub fn process<Wrapper: NodeWrapping, State: Parser<Wrapper> + Display>(
+    state: &mut State,
     (pos, token): (Position, Token),
     token_stream: &mut Vec<(Position, Token)>,
 ) {
@@ -343,7 +345,7 @@ pub fn process<Wrapper: NodeWrapping>(
             match state.current() {
                 Pointer::Node(node) => match state.get(node).node() {
                     Some(..) => {
-                        state.go_to_binding_pow(10.0); // application binding power
+                        state.go_to_binding_pow(19); // application binding power
                         let node = state.current().unwrap();
                         let left = state.reallocate(node);
                         state.set(
@@ -389,7 +391,7 @@ pub fn process<Wrapper: NodeWrapping>(
                 );
                 return;
             }
-            state.go_to_binding_pow(2.0); // binding power of comma
+            state.go_to_binding_pow(3); // binding power of comma
             if let Some(Node::List(..)) = state.current_node() {
                 let right = state.add(Wrapper::new(pos.only_end() + 1));
                 unpack!(state.current_node_mut() => Some(Node::List(list)) => list.push(right));
@@ -399,7 +401,7 @@ pub fn process<Wrapper: NodeWrapping>(
             }
         }
         Colon => {
-            state.go_to_binding_pow(-1.0); // impossibly low binding power, making it exit everything
+            state.go_to_binding_pow(0); // impossibly low binding power, making it exit everything
             if let Some(Node::ColonStruct(..)) = state.current_node() {
                 let right = state.add(Wrapper::new(pos.only_end() + 1));
                 unpack!(state.current_node_mut() => Some(Node::ColonStruct(list)) => list.push(right));

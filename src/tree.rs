@@ -179,16 +179,16 @@ impl NodeWrapping for NodeWrapper {
                             indentation
                         )
                     },
-                ColonStruct(list) =>
-                    if list.len() == 1 {
+                ColonStruct(content) =>
+                    if content.len() == 1 {
                         format!(
                             "{}",
-                            list[0]
+                            content[0]
                                 .get_wrapper(tree)
                                 .display(tree, next_indentation.clone())
                         )
                     } else {
-                        let mut list = list.iter();
+                        let mut list = content.iter();
                         format!(
                             "{}{}",
                             list.next()
@@ -201,6 +201,32 @@ impl NodeWrapping for NodeWrapper {
                                     indentation.clone(),
                                     item.get_wrapper(tree)
                                         .display(tree, indentation.clone() + "  ")
+                                )
+                            })
+                            .collect::<String>(),
+                        )
+                    },
+                Statements(content) =>
+                    if content.len() == 1 {
+                        format!(
+                            "{}",
+                            content[0]
+                                .get_wrapper(tree)
+                                .display(tree, next_indentation.clone())
+                        )
+                    } else {
+                        let mut list = content.iter();
+                        format!(
+                            "{}{}",
+                            list.next()
+                                .unwrap()
+                                .get_wrapper(tree)
+                                .display(tree, indentation.clone()),
+                            list.map(|item| {
+                                format!(
+                                    "\n{}{}",
+                                    indentation.clone(),
+                                    item.get_wrapper(tree).display(tree, indentation.clone())
                                 )
                             })
                             .collect::<String>(),
@@ -301,6 +327,7 @@ pub enum Node {
     // multiple values
     List(Vec<NodeId>),        // a, b, c, d, ...
     ColonStruct(Vec<NodeId>), // a : b : c : d
+    Statements(Vec<NodeId>),
 
     // operations
     BinaryOp {

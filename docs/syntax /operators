@@ -6,10 +6,10 @@ In Thyn they combine two, less or more identifiers and act one them. These are a
 The operators with the lowest binding power come first, then it gets higher and higher:
 
 
-0 Equation Operator:
+1 Equation Operator:
     a = b       Definition
 
-1 Mutations:                                      | overloadable
+2 Mutations:                                      | overloadable
     a := b      Writing
 
     a |= b      OR-Assign
@@ -25,16 +25,16 @@ The operators with the lowest binding power come first, then it gets higher and 
 
     a =|= b     Swapping
 
-2 Comma Operator:
+3 Comma Operator:
     a, b        Combining values into a list.
 
-3 Logical Operators (lazy):
-    3.1 a || b  Or
-    3.2 a >|| b Xor
-    3.3 a && b  And
+4 Logical Operators (lazy):
+    4   a || b  Or
+    5   a >|| b Xor
+    6   a && b  And
 
 
-4 Comparison Operators (can be chained):
+7 Comparison Operators (can be chained):
 
     a == b      Equality
     a != b      Inequality
@@ -44,48 +44,44 @@ The operators with the lowest binding power come first, then it gets higher and 
     a >= b      Greater of Equal
 
 
-5 Mathematical/Binary Operators:                  | overloadable
+8 Mathematical/Binary Operators:                  | overloadable
 
-    5.1
-    5.11 a | b   Bitwise OR
-    5.12 a >| b  Bitwise XOR
-    5.13 a & b   Bitwise AND
+    8   a | b   Bitwise OR
+    9   a >| b  Bitwise XOR
+    10  a & b   Bitwise AND
 
-    5.2 a + b    Addition
+    11  a + b    Addition
         a - b    Subtraction
 
-    5.3 a * b    Multiplication
+    12  a * b    Multiplication
         a / b    Division
         a % b    Euclidic Modulo: -10 % 3 = 2; 10 % -3 = -2
 
-    5.4 -a       Negation
+    13  -a       Negation
         +a       Double Negation
 
-    5.5 User Defined Operators get defaulted here, for instance:
+    14  User Defined Operators get defaulted here, for instance:
         · (dot-product),
         >< (cross-product),
         ^ (power)
 
-6 Pipe Operator:
+15 Pipe Operator:
 
-    6.1 a |> b   Piping
+    15  a |> b   Piping
                  note: The precendence can be ignored while writing patterns.
-    6.2 a <| b
+    16  a <| b
 
-7 Types:
-    a b        Typing identifiers
-
-8 Postfix Unary Mutations:                        | overloadable
+17 Postfix Unary Mutations:                        | overloadable
     a++         Incrementation
     a--         Decrementation
 
-9 Prefix Unary Operators:                         | overloadable
+18 Prefix Unary Operators:                         | overloadable
     !a          Invertion (bitwise & logical)
     -> a        Referencing
 
-10 Application:
+19 Application:
     a(b)        Calling
     a[b]        Indexing
 
-11 Lifetime:
+20 Lifetime:
     'a          Lifetiming

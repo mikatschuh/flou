@@ -98,11 +98,6 @@ impl Tokenizer {
                     self.pos.set_new_start();
                     push(self.pos, Token::Comma)
                 }
-                ':' => {
-                    self.finish(errors, push);
-                    self.pos.set_new_start();
-                    push(self.pos, Token::Colon)
-                }
                 _ => match into_op::char_is_op(c) {
                     true => match self.state {
                         State::Op(ref mut op) => {

@@ -139,12 +139,12 @@ impl Formatter {
     }
     fn state<T: Display>(&self, text: &T) {
         if self.enabled {
-            println!("{}\n", text)
+            println!("\n{}\n", text)
         }
     }
     fn log(&self, text: &str) {
         if self.enabled {
-            println!("{}", (String::from("#") + " " + text).bold())
+            println!("{}", ("#".to_owned() + " " + text).bold())
         }
     }
 }

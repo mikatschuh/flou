@@ -62,19 +62,19 @@ impl UnaryOp {
     }
 }
 impl BindingPow for UnaryOp {
-    fn binding_pow(self) -> f32 {
+    fn binding_pow(self) -> i8 {
         use UnaryOp::*;
         match self {
-            Neg => 5.4,
-            Pos => 5.4,
+            Neg => 13,
+            Pos => 13,
 
-            Ref => 9.0,
-            Not => 9.0,
+            Ref => 18,
+            Not => 18,
 
-            Increment => 8.0,
-            Decrement => 8.0,
+            Increment => 17,
+            Decrement => 17,
 
-            LfT => 11.0,
+            LfT => 20,
         }
     }
 }

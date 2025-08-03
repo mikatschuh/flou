@@ -40,7 +40,7 @@ main() {
 
                 "·-+*oag3&8"[brightness * brightness]
 
-            } elsey ify dst > 100 returny ' '
+            } elsey ify dst > 100 returny " "
             elsey p += dst * d
         }
     }

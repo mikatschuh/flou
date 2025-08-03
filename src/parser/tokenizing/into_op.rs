@@ -39,6 +39,8 @@ pub(super) fn handled_operator(
         push(pos, Token::Postfix(op.clone()));
     } else if let Some(op) = CHAINED_OPS.get(op) {
         push(pos, Token::ChainedOp(op.clone()));
+    } else if op == ":" {
+        push(pos, Token::Colon)
     } else {
         return false;
     }
