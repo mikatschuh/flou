@@ -1,7 +1,6 @@
 use std::{
     fmt::{Debug, Display},
     path::Path,
-    vec::IntoIter,
 };
 
 use crate::{
@@ -21,7 +20,6 @@ use crate::{
         },
         EscapeSequenceConfusion, Tokenizer,
     },
-    pop_as_long_as,
     tree::{
         Node::{self},
         NodeId, NodeWrapper, NodeWrapping, Note, ScopeId, Tree,
@@ -37,26 +35,29 @@ pub mod num;
 
 pub mod tokenizing;
 mod tree_navigation;
-use ::num::Integer;
 use tree_navigation::*;
 
 pub fn parse(text: &str, path: &'static Path) -> (String, Rc<Errors>) {
     let mut errors = Rc::new(Errors::empty());
     let mut parser = PrattParser::<NodeWrapper>::new(Formatter { enabled: true }, errors.clone());
-    let mut push_token = |pos: Position, token: Token| process(&mut parser, (pos, token));
+    let mut tokens: Vec<(Position, Token)> = vec![];
+    let mut push_token = |pos: Position, token: Token| tokens.push((pos, token));
     let mut tokenizer = Tokenizer::new(path);
     text.chars()
         .for_each(|c| tokenizer.process_char(&mut errors, c, &mut push_token));
     tokenizer.end_of_file(&mut errors, &mut push_token);
+    tokens.reverse();
+    while let Some(token) = tokens.pop() {
+        process(&mut parser, token, &mut tokens);
+    }
     (parser.tree().to_string(), errors)
 }
 #[derive(PartialEq, Debug, Clone)]
 pub enum Token {
     UnknownOp(String),
-    PreUnary(PrefixUnaryOp),
-    BufferedNot,
-    PostUnary(PostfixUnaryOp),
-    Binary(BinaryOp),
+    Prefix(PrefixUnaryOp),
+    Postfix(PostfixUnaryOp),
+    Infix(BinaryOp),
     ChainedOp(ChainedOp),
 
     Quote {
@@ -87,10 +88,9 @@ impl Display for Token {
             "{}",
             match self {
                 UnknownOp(op) => op.bold(),
-                PreUnary(op) => format!("{}", op).bold(),
-                BufferedNot => "! [buffered]".bold(),
-                PostUnary(op) => format!("{}", op).bold(),
-                Binary(op) => format!("{}", op).bold(),
+                Prefix(op) => format!("{}", op).bold(),
+                Postfix(op) => format!("{}", op).bold(),
+                Infix(op) => format!("{}", op).bold(),
                 ChainedOp(op) => format!("{}", op).bold(),
 
                 Quote { quote, .. } => format!("\"{}\"", quote).bold(),
@@ -123,7 +123,6 @@ impl Token {
 pub struct PrattParser<Wrapper: NodeWrapping> {
     formatter: Formatter,
     tree: Tree<Wrapper>,
-    token_buffer: Vec<(Position, Token)>,
     errors: Rc<Errors>,
     parse_stack: ParseStack,
 }
@@ -134,7 +133,6 @@ impl<Wrapper: NodeWrapping> PrattParser<Wrapper> {
         Self {
             parse_stack: ParseStack::new(Pointer::Scope(root)),
             formatter,
-            token_buffer: vec![],
             errors,
             tree,
         }
@@ -155,8 +153,6 @@ pub trait Parser<Wrapper: NodeWrapping>: TreeNavi<Wrapper> + Getting<Wrapper> {
     fn reallocate(&mut self, id: NodeId) -> NodeId;
     fn add_scope(&mut self) -> ScopeId;
     fn value_to_node(&mut self, string: String, pos: Position) -> Wrapper;
-    fn buffer(&mut self) -> &mut Vec<(Position, Token)>;
-    fn empty_buffer(&mut self) -> IntoIter<(Position, Token)>;
     fn add_val(&mut self, val: Wrapper);
     /// Moves up until its at the right height. It will only ever move into nodes.
     fn go_to_binding_pow(&mut self, binding_pow: f32);
@@ -183,62 +179,134 @@ pub trait Parser<Wrapper: NodeWrapping>: TreeNavi<Wrapper> + Getting<Wrapper> {
     fn handle_closed_bracket(&mut self, pos: Position, bracket: &str);
 }
 pub fn process<Wrapper: NodeWrapping>(
-    parser: &mut impl Parser<Wrapper>,
+    state: &mut impl Parser<Wrapper>,
     (pos, token): (Position, Token),
+    token_stream: &mut Vec<(Position, Token)>,
 ) {
-    parser.formatter().input(&token);
+    state.formatter().input(&token);
     use Token::*;
     match token {
         UnknownOp(op) => {
-            split_operator(parser.errors(), op, pos)
-                .for_each(|(pos, token)| process(parser, (pos, token)));
+            split_operator(state.errors(), op, pos)
+                .for_each(|(pos, token)| token_stream.push((pos, token)));
             return;
         }
-        PreUnary(op) => {
+        Prefix(op) => {
             let op: UnaryOp = op.into();
-            if matches!(op, UnaryOp::Neg | UnaryOp::Pos) && parser.points_to_some_node() {
+            if matches!(op, UnaryOp::Neg | UnaryOp::Pos) && state.points_to_some_node() {
                 process(
-                    parser,
+                    state,
                     (
                         pos,
-                        Binary(if op == UnaryOp::Pos {
+                        Infix(if op == UnaryOp::Pos {
                             BinaryOp::Add
                         } else {
                             BinaryOp::Sub
                         }),
                     ),
+                    token_stream,
                 );
                 return; // a -/+
                         //   ¯¯¯
             } else if let UnaryOp::Not = op {
-                parser.buffer().push((pos, BufferedNot));
+                let mut invertion = true;
+                while let Some((next_pos, next)) = token_stream.pop() {
+                    match next {
+                        Prefix(PrefixUnaryOp::Not) => {
+                            invertion = !invertion;
+                            continue;
+                        }
+                        Infix(BinaryOp::Or(inverted)) => process(
+                            state,
+                            (pos | next_pos, Infix(BinaryOp::Or(invertion != inverted))),
+                            token_stream,
+                        ),
+                        Infix(BinaryOp::Xor(inverted)) => process(
+                            state,
+                            (pos | next_pos, Infix(BinaryOp::Xor(invertion != inverted))),
+                            token_stream,
+                        ),
+                        Infix(BinaryOp::And(inverted)) => process(
+                            state,
+                            (pos | next_pos, Infix(BinaryOp::And(invertion != inverted))),
+                            token_stream,
+                        ),
+                        Infix(BinaryOp::BitOr(inverted)) => process(
+                            state,
+                            (
+                                pos | next_pos,
+                                Infix(BinaryOp::BitOr(invertion != inverted)),
+                            ),
+                            token_stream,
+                        ),
+                        Infix(BinaryOp::BitXor(inverted)) => process(
+                            state,
+                            (
+                                pos | next_pos,
+                                Infix(BinaryOp::BitXor(invertion != inverted)),
+                            ),
+                            token_stream,
+                        ),
+                        Infix(BinaryOp::BitAnd(inverted)) => process(
+                            state,
+                            (
+                                pos | next_pos,
+                                Infix(BinaryOp::BitAnd(invertion != inverted)),
+                            ),
+                            token_stream,
+                        ),
+                        Infix(BinaryOp::OrAssign(inverted)) => process(
+                            state,
+                            (
+                                pos | next_pos,
+                                Infix(BinaryOp::OrAssign(invertion != inverted)),
+                            ),
+                            token_stream,
+                        ),
+                        Infix(BinaryOp::XorAssign(inverted)) => process(
+                            state,
+                            (
+                                pos | next_pos,
+                                Infix(BinaryOp::XorAssign(invertion != inverted)),
+                            ),
+                            token_stream,
+                        ),
+                        Infix(BinaryOp::AndAssign(inverted)) => process(
+                            state,
+                            (
+                                pos | next_pos,
+                                Infix(BinaryOp::AndAssign(invertion != inverted)),
+                            ),
+                            token_stream,
+                        ),
+                        _ => {
+                            let operand = state.add(Wrapper::new(pos.only_end() + 1));
+                            let unary_op = Wrapper::new(pos).with_node(Node::UnaryOp {
+                                op: UnaryOp::Not,
+                                operand,
+                            });
+                            state.add_val(unary_op);
+                            state.move_down(operand);
+                            process(state, (next_pos, next), token_stream);
+                            return;
+                        }
+                    }
+                    return;
+                }
                 return;
             }
-            parser.empty_buffer().for_each(|item| process(parser, item));
-
-            let operand = parser.add(Wrapper::new(pos.only_end() + 1));
+            let operand = state.add(Wrapper::new(pos.only_end() + 1));
             let unary_op = Wrapper::new(pos).with_node(Node::UnaryOp { op, operand });
-            parser.add_val(unary_op);
-            parser.move_down(operand)
+            state.add_val(unary_op);
+            state.move_down(operand)
         }
-        BufferedNot => {
-            let operand = parser.add(Wrapper::new(pos.only_end() + 1));
-            let unary_op = Wrapper::new(pos).with_node(Node::UnaryOp {
-                op: UnaryOp::Not,
-                operand,
-            });
-            parser.add_val(unary_op);
-            parser.move_down(operand)
-        }
-        PostUnary(op) => {
+        Postfix(op) => {
             let op: UnaryOp = op.into();
-            if parser.points_to_some_node() {
-                parser.empty_buffer().for_each(|item| process(parser, item));
-
-                parser.go_to_binding_pow(op.binding_pow());
-                let operand = parser.current_node_id().unwrap();
-                let operand = parser.reallocate(operand);
-                parser.set(
+            if state.points_to_some_node() {
+                state.go_to_binding_pow(op.binding_pow());
+                let operand = state.current_node_id().unwrap();
+                let operand = state.reallocate(operand);
+                state.set(
                     operand,
                     Wrapper::new(pos).with_node(Node::UnaryOp { op, operand }),
                 );
@@ -247,14 +315,14 @@ pub fn process<Wrapper: NodeWrapping>(
                     UnaryOp::Increment => PrefixUnaryOp::Pos,
                     _ => PrefixUnaryOp::Neg,
                 };
-                (0..2).for_each(|_| parser.buffer().push((pos, PreUnary(unary_op))));
+                (0..2).for_each(|_| process(state, (pos, Prefix(unary_op)), token_stream));
                 return; // { ++/--
                         //   ¯¯¯¯¯
             }
         }
-        Binary(op) => {
-            if !parser.points_to_some_node() {
-                parser.errors().push(
+        Infix(op) => {
+            if !state.points_to_some_node() {
+                state.errors().push(
                     pos,
                     ErrorCode::ExpectedValue {
                         found: op.to_string(),
@@ -262,60 +330,14 @@ pub fn process<Wrapper: NodeWrapping>(
                 );
                 return;
             }
-            if matches!(
-                op,
-                BinaryOp::And | BinaryOp::Or | BinaryOp::Nand | BinaryOp::Nor
-            ) {
-                let mut not_pos = pos;
-                let mut i = 0;
-                pop_as_long_as!(parser.buffer() => (pos, BufferedNot) =>{ not_pos = pos; i += 1 });
-                if i > 0 {
-                    parser.buffer().push((
-                        not_pos | pos,
-                        Binary(match op {
-                            BinaryOp::And if i.is_odd() => BinaryOp::Nand,
-                            BinaryOp::Or if i.is_odd() => BinaryOp::Nor,
-                            BinaryOp::Nand if i.is_odd() => BinaryOp::And,
-                            BinaryOp::Nor if i.is_odd() => BinaryOp::Or,
-                            _ => op,
-                        }),
-                    ));
-                    return;
-                }
-            }
-            if matches!(
-                op,
-                BinaryOp::And | BinaryOp::Or | BinaryOp::Nand | BinaryOp::Nor
-            ) {
-                let mut not_pos = pos;
-                let mut i = 0;
-                pop_as_long_as!(parser.buffer() => (pos, BufferedNot) =>{ not_pos = pos; i += 1 });
-                if i > 0 {
-                    parser.buffer().push((
-                        not_pos | pos,
-                        Binary(match op {
-                            BinaryOp::And if i.is_odd() => BinaryOp::Nand,
-                            BinaryOp::Or if i.is_odd() => BinaryOp::Nor,
-                            BinaryOp::Nand if i.is_odd() => BinaryOp::And,
-                            BinaryOp::Nor if i.is_odd() => BinaryOp::Or,
-                            _ => op,
-                        }),
-                    ));
-                    return;
-                }
-            }
-            if parser.points_to_some_node() {
-                parser.empty_buffer().for_each(|item| process(parser, item));
-
-                parser.go_to_binding_pow(op.binding_pow());
-                parser.make_binary_operator(pos, |left, right| Node::BinaryOp { op, left, right });
-            }
+            state.go_to_binding_pow(op.binding_pow());
+            state.make_binary_operator(pos, |left, right| Node::BinaryOp { op, left, right });
         }
         ChainedOp(op) => {
-            if !parser.points_to_some_node() {
+            if !state.points_to_some_node() {
                 // { op }
                 //  ¯¯¯
-                parser.errors().push(
+                state.errors().push(
                     pos,
                     ErrorCode::ExpectedValue {
                         found: op.to_string(),
@@ -323,54 +345,46 @@ pub fn process<Wrapper: NodeWrapping>(
                 );
                 return;
             }
-            parser.empty_buffer().for_each(|item| process(parser, item));
-
-            parser.go_to_binding_pow(op.binding_pow()); // binding power of comma
-            if let Some(Node::ChainedOp { .. }) = parser.current_node() {
-                let right = parser.add(Wrapper::new(pos.only_end() + 1));
-                unpack!(parser.current_node_mut() => Some(Node::ChainedOp{additions, ..}) => additions.push((op, right)));
-                parser.move_down(right)
+            state.go_to_binding_pow(op.binding_pow()); // binding power of comma
+            if let Some(Node::ChainedOp { .. }) = state.current_node() {
+                let right = state.add(Wrapper::new(pos.only_end() + 1));
+                unpack!(state.current_node_mut() => Some(Node::ChainedOp{additions, ..}) => additions.push((op, right)));
+                state.move_down(right)
             } else {
-                parser.make_binary_operator(pos, |left, right| Node::ChainedOp {
+                state.make_binary_operator(pos, |left, right| Node::ChainedOp {
                     first: left,
                     additions: NonEmptyVec::new((op, right)),
                 });
             }
         }
         Quote { quote, confusions } => {
-            parser.empty_buffer().for_each(|item| process(parser, item));
-
             let quote = Wrapper::new(pos).with_node(Node::Quote(quote)).add_notes(
                 confusions
                     .into_iter()
                     .map(|confusion| Note::EscapeSequenceConfusion(confusion))
                     .collect(),
             );
-            parser.add_val(quote)
+            state.add_val(quote)
         }
         Val(val) => {
-            parser.empty_buffer().for_each(|item| process(parser, item));
-
             if let Some(keyword) = Keyword::from_str(&val) {
                 todo!()
             } else {
-                let val = parser.value_to_node(val, pos);
-                parser.add_val(val)
+                let val = state.value_to_node(val, pos);
+                state.add_val(val)
             }
         }
         OpenBracket { squared } => {
-            parser.empty_buffer().for_each(|item| process(parser, item));
-
-            let content = parser.add(Wrapper::new(pos.only_end() + 1));
+            let content = state.add(Wrapper::new(pos.only_end() + 1));
             let brackets = Wrapper::new(pos).with_node(Node::Brackets { squared, content });
 
-            match parser.current() {
-                Pointer::Node(node) => match parser.get(node).node() {
+            match state.current() {
+                Pointer::Node(node) => match state.get(node).node() {
                     Some(..) => {
-                        parser.go_to_binding_pow(10.0); // application binding power
-                        let node = parser.current().unwrap();
-                        let left = parser.reallocate(node);
-                        parser.set(
+                        state.go_to_binding_pow(10.0); // application binding power
+                        let node = state.current().unwrap();
+                        let left = state.reallocate(node);
+                        state.set(
                             node,
                             Wrapper::new(pos).with_node(Node::BinaryOp {
                                 op: if squared {
@@ -383,35 +397,29 @@ pub fn process<Wrapper: NodeWrapping>(
                             }),
                         );
                     }
-                    None => parser.set(node, brackets),
+                    None => state.set(node, brackets),
                 },
                 Pointer::Scope(scope) => {
-                    let id = parser.push(scope, brackets);
-                    parser.move_down(id);
+                    let id = state.push(scope, brackets);
+                    state.move_down(id);
                 }
             }
-            parser.move_down(content)
+            state.move_down(content)
         }
         ClosedBracket {
             squared: own_squared,
-        } => {
-            parser.empty_buffer().for_each(|item| process(parser, item));
-
-            parser.handle_closed_bracket(pos, if own_squared { "]" } else { ")" })
-        }
+        } => state.handle_closed_bracket(pos, if own_squared { "]" } else { ")" }),
         OpenCurly => {
-            parser.empty_buffer().for_each(|item| process(parser, item));
-
-            let scope = parser.add_scope();
-            parser.add_val(Wrapper::new(pos).with_node(Node::Scope(scope)));
-            parser.move_into_new_scope(scope);
+            let scope = state.add_scope();
+            state.add_val(Wrapper::new(pos).with_node(Node::Scope(scope)));
+            state.move_into_new_scope(scope);
         }
-        ClosedCurly => parser.handle_closed_bracket(pos, "}"),
+        ClosedCurly => state.handle_closed_bracket(pos, "}"),
         Comma => {
-            if !parser.points_to_some_node() {
+            if !state.points_to_some_node() {
                 // { , }
                 //  ¯¯
-                parser.errors().push(
+                state.errors().push(
                     pos,
                     ErrorCode::ExpectedValue {
                         found: ",".to_owned(),
@@ -419,32 +427,25 @@ pub fn process<Wrapper: NodeWrapping>(
                 );
                 return;
             }
-            parser.empty_buffer().for_each(|item| process(parser, item));
-
-            parser.go_to_binding_pow(2.0); // binding power of comma
-            if let Some(Node::List(..)) = parser.current_node() {
-                let right = parser.add(Wrapper::new(pos.only_end() + 1));
-                unpack!(parser.current_node_mut() => Some(Node::List(list)) => list.push(right));
-                parser.move_down(right)
+            state.go_to_binding_pow(2.0); // binding power of comma
+            if let Some(Node::List(..)) = state.current_node() {
+                let right = state.add(Wrapper::new(pos.only_end() + 1));
+                unpack!(state.current_node_mut() => Some(Node::List(list)) => list.push(right));
+                state.move_down(right)
             } else {
-                parser.make_binary_operator(pos, |left, right| Node::List(vec![left, right]));
+                state.make_binary_operator(pos, |left, right| Node::List(vec![left, right]));
             }
         }
         Colon => {
-            parser.empty_buffer().for_each(|item| process(parser, item));
-
-            parser.go_to_binding_pow(-1.0); // impossibly low binding power, making it exit everything
-            if let Some(Node::ColonStruct(..)) = parser.current_node() {
-                let right = parser.add(Wrapper::new(pos.only_end() + 1));
-                unpack!(parser.current_node_mut() => Some(Node::ColonStruct(list)) => list.push(right));
-                parser.move_down(right)
-            } else if parser.points_to_some_node() {
-                parser
-                    .make_binary_operator(pos, |left, right| Node::ColonStruct(vec![left, right]));
+            state.go_to_binding_pow(-1.0); // impossibly low binding power, making it exit everything
+            if let Some(Node::ColonStruct(..)) = state.current_node() {
+                let right = state.add(Wrapper::new(pos.only_end() + 1));
+                unpack!(state.current_node_mut() => Some(Node::ColonStruct(list)) => list.push(right));
+                state.move_down(right)
+            } else if state.points_to_some_node() {
+                state.make_binary_operator(pos, |left, right| Node::ColonStruct(vec![left, right]));
             }
         }
-        EoF => {
-            parser.empty_buffer().for_each(|item| process(parser, item));
-        }
+        EoF => {}
     }
 }

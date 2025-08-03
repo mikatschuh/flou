@@ -32,11 +32,11 @@ pub(super) fn handled_operator(
     mut push: impl FnMut(Position, Token),
 ) -> bool {
     if let Some(op) = PREFIX_UNARY_OPS.get(op) {
-        push(pos, Token::PreUnary(op.clone()));
+        push(pos, Token::Prefix(op.clone()));
     } else if let Some(op) = BINARY_OPS.get(op) {
-        push(pos, Token::Binary(op.clone()));
+        push(pos, Token::Infix(op.clone()));
     } else if let Some(op) = POSTFIX_UNARY_OPS.get(op) {
-        push(pos, Token::PostUnary(op.clone()));
+        push(pos, Token::Postfix(op.clone()));
     } else if let Some(op) = CHAINED_OPS.get(op) {
         push(pos, Token::ChainedOp(op.clone()));
     } else {
@@ -101,11 +101,18 @@ pub(super) static BINARY_OPS: LazyLock<HashMap<&'static str, BinaryOp>> = LazyLo
         ("·", Dot),
         ("><", Cross),
         ("^", Power),
-        ("|", BitOr),
-        ("&", BitAnd),
-        (">|", BitXor),
-        ("||", Or),
-        ("&&", And),
+        ("|", BitOr(false)),
+        ("!|", BitOr(true)),
+        ("&", BitAnd(false)),
+        ("!&", BitAnd(true)),
+        (">|", BitXor(false)),
+        ("!>|", BitXor(true)),
+        ("||", Or(false)),
+        ("!||", Or(true)),
+        ("&&", And(false)),
+        ("!&&", And(true)),
+        (">||", Xor(false)),
+        ("!>||", Xor(true)),
         (":=", Write),
         ("=|=", Swap),
     ])

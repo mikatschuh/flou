@@ -12,16 +12,16 @@ The operators with the lowest binding power come first, then it gets higher and 
 1 Mutations:                                      | overloadable
     a := b      Writing
 
-    a *= b      Multiplication-Assign
-    a /= b      Division-Assign
-    a %= b      Modulo-Assign
+    a |= b      OR-Assign
+    a >|= b     XOR-Assign
+    a &= b      AND-Assign
 
     a += b      Addition-Assign
     a -= b      Subtraction-Assign
 
-    a &= b      Bitwise AND-Assign
-    a |= b      Bitwise OR-Assign
-    a >|= b     Bitwise XOR-Assign
+    a *= b      Multiplication-Assign
+    a /= b      Division-Assign
+    a %= b      Modulo-Assign
 
     a =|= b     Swapping
 
@@ -29,26 +29,27 @@ The operators with the lowest binding power come first, then it gets higher and 
     a, b        Combining values into a list.
 
 3 Logical Operators (lazy):
-    a || b      Or
-    a !|| b     Nor
-    a && b      And
-    a !&& b     Nand
+    3.1 a || b  Or
+    3.2 a >|| b Xor
+    3.3 a && b  And
+
 
 4 Comparison Operators (can be chained):
 
-    a == b   Equality
-    a != b   Inequality
-    a < b    Smaller
-    a > b    Greater
-    a <= b   Smaller or Equal
-    a >= b   Greater of Equal
+    a == b      Equality
+    a != b      Inequality
+    a < b       Smaller
+    a > b       Greater
+    a <= b      Smaller or Equal
+    a >= b      Greater of Equal
 
 
 5 Mathematical/Binary Operators:                  | overloadable
 
-    5.1 a & b    Bitwise AND
-        a | b    Bitwise OR
-        a >| b   Bitwise XOR
+    5.1
+    5.11 a | b   Bitwise OR
+    5.12 a >| b  Bitwise XOR
+    5.13 a & b   Bitwise AND
 
     5.2 a + b    Addition
         a - b    Subtraction

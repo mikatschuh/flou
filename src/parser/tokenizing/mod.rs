@@ -223,11 +223,11 @@ impl Tokenizer {
             State::Op(ref mut op) => {
                 if op.len() != 0 {
                     if let Some(op) = into_op::PREFIX_UNARY_OPS.get(op.as_str()) {
-                        push(self.pos - 1, Token::PreUnary(*op))
+                        push(self.pos - 1, Token::Prefix(*op))
                     } else if let Some(op) = into_op::BINARY_OPS.get(op.as_str()) {
-                        push(self.pos - 1, Token::Binary(*op))
+                        push(self.pos - 1, Token::Infix(*op))
                     } else if let Some(op) = into_op::POSTFIX_UNARY_OPS.get(op.as_str()) {
-                        push(self.pos - 1, Token::PostUnary(*op))
+                        push(self.pos - 1, Token::Postfix(*op))
                     } else if let Some(op) = into_op::CHAINED_OPS.get(op.as_str()) {
                         push(self.pos - 1, Token::ChainedOp(*op))
                     } else {

@@ -8,27 +8,26 @@ pub enum BinaryOp {
 
     Write, // a := b
 
-    MulAssign, // a *= b
-    DivAssign, // a /= b
-    ModAssign, // a %= b
+    OrAssign(bool),  // a |= b
+    XorAssign(bool), // a >|= b
+    AndAssign(bool), // a &= b
 
     AddAssign, // a += b
     SubAssign, // a -= b
 
-    BitAndAssign, // a &= b
-    BitOrAssign,  // a |= b
-    BitXorAssign, // a >|= b
+    MulAssign, // a *= b
+    DivAssign, // a /= b
+    ModAssign, // a %= b
 
     Swap, // a =|= b
 
-    Or,   // a || b
-    Nor,  // a !|| b
-    And,  // a && b
-    Nand, // a !&& b
+    Or(bool),  // a || b
+    Xor(bool), // a >|| b
+    And(bool), // a && b
 
-    BitAnd, // a & b
-    BitOr,  // a | b
-    BitXor, // a >| b
+    BitOr(bool),  // a | b
+    BitXor(bool), // a >| b
+    BitAnd(bool), // a & b
 
     Add, // a + b
     Sub, // a - b
@@ -56,27 +55,35 @@ impl fmt::Display for BinaryOp {
 
                 Write => ":=",
 
-                MulAssign => "*=",
-                DivAssign => "/=",
-                ModAssign => "%=",
+                AndAssign(false) => "&=",
+                AndAssign(true) => "!&=",
+                OrAssign(false) => "|=",
+                OrAssign(true) => "!|=",
+                XorAssign(false) => ">|=",
+                XorAssign(true) => "!>|=",
 
                 AddAssign => "+=",
                 SubAssign => "-=",
 
-                BitAndAssign => "&=",
-                BitOrAssign => "|=",
-                BitXorAssign => ">|=",
+                MulAssign => "*=",
+                DivAssign => "/=",
+                ModAssign => "%=",
 
                 Swap => "=|=",
 
-                Or => "||",
-                Nor => "!||",
-                And => "&&",
-                Nand => "!&&",
+                Or(false) => "||",
+                Or(true) => "!||",
+                And(false) => "&&",
+                And(true) => "!&&",
+                Xor(false) => ">||",
+                Xor(true) => "!>||",
 
-                BitOr => "|",
-                BitAnd => "&",
-                BitXor => ">|",
+                BitOr(false) => "|",
+                BitOr(true) => "!|",
+                BitAnd(false) => "&",
+                BitAnd(true) => "!&",
+                BitXor(false) => ">|",
+                BitXor(true) => "!>|",
 
                 Add => "+",
                 Sub => "-",
@@ -101,48 +108,29 @@ impl BindingPow for BinaryOp {
         match self {
             Equation => 0.0, // a = b
 
-            Write => 1.0,
-
-            MulAssign => 1.0,
-            DivAssign => 1.0,
-            ModAssign => 1.0,
-
-            AddAssign => 1.0,
-            SubAssign => 1.0,
-
-            BitAndAssign => 1.0,
-            BitOrAssign => 1.0,
-            BitXorAssign => 1.0,
-
-            Swap => 1.0,
+            Write | OrAssign(..) | XorAssign(..) | AndAssign(..) | AddAssign | SubAssign
+            | MulAssign | DivAssign | ModAssign | Swap => 1.0,
 
             // Comma => 2.0
-            Or => 3.0,   // a || b
-            Nor => 3.0,  // a !|| b
-            And => 3.0,  // a && b
-            Nand => 3.0, // a !&& b
+            Or(..) => 3.1,
+            Xor(..) => 3.2,
+            And(..) => 3.3,
 
             // Smaller / Greater / SmallerOrEqual / GreaterOrEqual => 4.1
             // Equal / NotEqual => 4.2
-            BitOr => 5.1,
-            BitAnd => 5.1,
-            BitXor => 5.1,
+            BitOr(..) => 5.11,
+            BitXor(..) => 5.12,
+            BitAnd(..) => 5.13,
 
-            Add => 5.2,
-            Sub => 5.2,
+            Add | Sub => 5.2,
 
-            Mul => 5.3,
-            Div => 5.3,
-            Mod => 5.3,
+            Mul | Div | Mod => 5.3,
             // Neg => 5.4
             // Pos => 5.4
-            Dot => 5.5,
-            Cross => 5.5,
-            Power => 5.5,
+            Dot | Cross | Power => 5.5,
 
             // CustomOperators => 5.5
-            Index => 10.0,
-            App => 10.0,
+            Index | App => 10.0,
         }
     }
 }

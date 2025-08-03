@@ -50,14 +50,6 @@ impl<Wrapper: NodeWrapping> Parser<Wrapper> for PrattParser<Wrapper> {
     fn value_to_node(&mut self, string: String, pos: Position) -> Wrapper {
         value_to_node(string, pos, &mut self.tree)
     }
-    #[inline]
-    fn buffer(&mut self) -> &mut Vec<(Position, Token)> {
-        &mut self.token_buffer
-    }
-    #[inline]
-    fn empty_buffer(&mut self) -> IntoIter<(Position, Token)> {
-        take(&mut self.token_buffer).into_iter()
-    }
     fn add_val(&mut self, val: Wrapper) {
         loop {
             match self.current() {
