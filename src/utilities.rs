@@ -1,7 +1,6 @@
 use std::alloc::{alloc, dealloc, Layout};
 use std::ops::{Deref, DerefMut};
 use std::ptr::NonNull;
-use std::slice::Iter;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 // Die innere Struktur, die gezählt wird
@@ -142,51 +141,7 @@ impl<T: fmt::Debug, A: CustomAllocator> fmt::Debug for Rc<T, A> {
         write!(f, "{:?}", unsafe { &self.ptr.as_ref().value })
     }
 }
-#[derive(Debug, Clone, PartialEq)]
-pub struct NonEmptyVec<T>(Vec<T>);
 
-impl<T> NonEmptyVec<T> {
-    pub fn new(first: T) -> Self {
-        Self(vec![first])
-    }
-    pub fn last(&self) -> &T {
-        self.0.last().unwrap()
-    }
-    pub fn last_mut(&mut self) -> &mut T {
-        self.0.last_mut().unwrap()
-    }
-    pub fn penultimate(&self) -> Option<&T> {
-        let len = self.0.len();
-        if len >= 2 {
-            Some(&self.0[len - 2])
-        } else {
-            None
-        }
-    }
-    pub fn push(&mut self, val: T) {
-        self.0.push(val)
-    }
-    pub fn pop(&mut self) -> T {
-        assert_ne!(self.0.len(), 1);
-        self.0.pop().unwrap()
-    }
-    pub fn iter(&self) -> Iter<'_, T> {
-        self.0.iter()
-    }
-}
-impl<T, const N: usize> From<[T; N]> for NonEmptyVec<T> {
-    fn from(value: [T; N]) -> Self {
-        assert_ne!(N, 0);
-        Self(Vec::from(value))
-    }
-}
-impl<'a, T> IntoIterator for &'a NonEmptyVec<T> {
-    type IntoIter = std::slice::Iter<'a, T>;
-    type Item = &'a T;
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.iter()
-    }
-}
 #[macro_export]
 macro_rules! pop_as_long_as {
     ($arr:expr => $pattern:pat => $code:expr) => {

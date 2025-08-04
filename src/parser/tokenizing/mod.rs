@@ -4,7 +4,7 @@ pub(super) mod into_op;
 pub(super) mod keyword;
 pub mod unary_op;
 
-use crate::{error::*, parser::Token};
+use crate::{error::*, parser::Token, tree::Bracket};
 
 pub struct Tokenizer {
     pos: Position,
@@ -66,32 +66,62 @@ impl Tokenizer {
                 '(' => {
                     self.finish(errors, push);
                     self.pos.set_new_start();
-                    push(self.pos, Token::OpenBracket { squared: false });
+                    push(
+                        self.pos,
+                        Token::OpenBracket {
+                            kind: Bracket::Round,
+                        },
+                    );
                 }
                 ')' => {
                     self.finish(errors, push);
                     self.pos.set_new_start();
-                    push(self.pos, Token::ClosedBracket { squared: false })
+                    push(
+                        self.pos,
+                        Token::ClosedBracket {
+                            kind: Bracket::Round,
+                        },
+                    )
                 }
                 '[' => {
                     self.finish(errors, push);
                     self.pos.set_new_start();
-                    push(self.pos, Token::OpenBracket { squared: true })
+                    push(
+                        self.pos,
+                        Token::OpenBracket {
+                            kind: Bracket::Squared,
+                        },
+                    )
                 }
                 ']' => {
                     self.finish(errors, push);
                     self.pos.set_new_start();
-                    push(self.pos, Token::ClosedBracket { squared: true })
+                    push(
+                        self.pos,
+                        Token::ClosedBracket {
+                            kind: Bracket::Squared,
+                        },
+                    )
                 }
                 '{' => {
                     self.finish(errors, push);
                     self.pos.set_new_start();
-                    push(self.pos, Token::OpenCurly)
+                    push(
+                        self.pos,
+                        Token::OpenBracket {
+                            kind: Bracket::Curly,
+                        },
+                    )
                 }
                 '}' => {
                     self.finish(errors, push);
                     self.pos.set_new_start();
-                    push(self.pos, Token::ClosedCurly)
+                    push(
+                        self.pos,
+                        Token::ClosedBracket {
+                            kind: Bracket::Curly,
+                        },
+                    )
                 }
                 ',' => {
                     self.finish(errors, push);

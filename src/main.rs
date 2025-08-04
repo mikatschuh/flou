@@ -15,6 +15,8 @@ mod tree;
 mod typing;
 #[macro_use]
 mod utilities;
+#[macro_use]
+mod comp;
 mod vms;
 /*
 ___    __

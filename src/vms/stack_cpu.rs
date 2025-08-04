@@ -118,7 +118,7 @@ enum _Instruction {
     LOD, // stack[sp] = mem[stack[sp]]                      3
     STO, // mem[stack[sp]] = stack[sp - 1]                  4
 
-    JMP, // pc = mem[pc + 1]                                5
+    JMP, // pc = pop stack                                  5
     BE,  // if stack[sp] == 0: pc = mem[pc + 1]             6
     BNE, // if stack[sp] != 0: pc = mem[pc + 1]             7
     BS,  // if stack[sp] < 0: pc = mem[pc + 1]              8

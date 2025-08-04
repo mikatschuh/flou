@@ -4,6 +4,7 @@ use std::{
     str::Chars,
 };
 
+use crate::tree::Bracket;
 #[allow(unused)]
 use crate::{
     error::*,
@@ -172,7 +173,7 @@ pub fn value_to_node<Wrapper: NodeWrapping>(
                         .with_type(suffix),
                 );
                 Wrapper::new(pos).with_node(Node::Brackets {
-                    squared: false,
+                    kind: Bracket::Round,
                     content: ratio,
                 })
             }

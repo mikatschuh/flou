@@ -21,16 +21,18 @@ use crate::{
         EscapeSequenceConfusion, Tokenizer,
     },
     tree::{
+        Bracket,
         Node::{self},
-        NodeId, NodeWrapper, NodeWrapping, Note, ScopeId, Tree,
+        NodeId, NodeWrapper, NodeWrapping, Note, Tree,
     },
     unpack,
-    utilities::{NonEmptyVec, Rc},
+    utilities::Rc,
     Formatter,
 };
 use colored::{ColoredString, Colorize};
 
 mod debug;
+pub mod item;
 mod lib;
 pub mod num;
 pub mod tokenizing;
@@ -39,7 +41,8 @@ use tree_navigation::*;
 
 pub fn parse(text: &str, path: &'static Path) -> (String, Rc<Errors>) {
     let mut errors = Rc::new(Errors::empty());
-    let mut parser = PrattParser::<NodeWrapper>::new(Formatter { enabled: true }, errors.clone());
+    let mut parser =
+        PrattParser::<NodeWrapper>::new(Formatter { enabled: true }, errors.clone(), path);
     let mut tokens: Vec<(Position, Token)> = vec![];
     let mut push_token = |pos: Position, token: Token| tokens.push((pos, token));
     let mut tokenizer = Tokenizer::new(path);
@@ -69,13 +72,11 @@ pub enum Token {
     Val(String),
 
     OpenBracket {
-        squared: bool,
+        kind: Bracket,
     },
     ClosedBracket {
-        squared: bool,
+        kind: Bracket,
     },
-    OpenCurly,
-    ClosedCurly,
 
     Comma,
     Colon,
@@ -98,16 +99,8 @@ impl Display for Token {
                 Quote { quote, .. } => format!("\"{}\"", quote).bold(),
                 Val(val) => format!("{}", val).bold(),
 
-                OpenBracket { squared } => match squared {
-                    true => "[".bold(),
-                    false => "(".bold(),
-                },
-                ClosedBracket { squared } => match squared {
-                    true => "]".bold(),
-                    false => ")".bold(),
-                },
-                OpenCurly => "{".bold(),
-                ClosedCurly => "}".bold(),
+                OpenBracket { kind } => kind.display_open().bold(),
+                ClosedBracket { kind } => kind.display_closed().bold(),
 
                 Comma => ",".bold(),
                 Colon => ":".bold(),
@@ -129,11 +122,11 @@ pub struct PrattParser<Wrapper: NodeWrapping> {
     parse_stack: ParseStack,
 }
 impl<Wrapper: NodeWrapping> PrattParser<Wrapper> {
-    fn new(formatter: Formatter, errors: Rc<Errors>) -> Self {
+    fn new(formatter: Formatter, errors: Rc<Errors>, path: &'static Path) -> Self {
         let mut tree = Tree::<Wrapper>::new();
-        let root = tree.add_scope();
+        let root = tree.add_root(Wrapper::new(Position::new(path)));
         Self {
-            parse_stack: ParseStack::new(Pointer::Scope(root)),
+            parse_stack: ParseStack::new(root),
             formatter,
             errors,
             tree,
@@ -149,11 +142,8 @@ pub trait Getting<Wrapper: NodeWrapping> {
 }
 pub trait Parser<Wrapper: NodeWrapping>: TreeNavi<Wrapper> + Getting<Wrapper> {
     fn add(&mut self, val: Wrapper) -> NodeId;
-    fn push(&mut self, scope: ScopeId, val: Wrapper) -> NodeId;
     fn set(&mut self, id: NodeId, val: Wrapper);
-    fn get(&self, id: NodeId) -> &Wrapper;
     fn reallocate(&mut self, id: NodeId) -> NodeId;
-    fn add_scope(&mut self) -> ScopeId;
     fn value_to_node(&mut self, string: String, pos: Position) -> Wrapper;
     fn add_val(&mut self, val: Wrapper);
     /// Moves up until its at the right height. It will only ever move into nodes.
@@ -178,7 +168,7 @@ pub trait Parser<Wrapper: NodeWrapping>: TreeNavi<Wrapper> + Getting<Wrapper> {
         pos: Position,
         binary_operator: impl Fn(NodeId, NodeId) -> Node,
     );
-    fn handle_closed_bracket(&mut self, pos: Position, bracket: &str);
+    fn handle_closed_bracket(&mut self, pos: Position, bracket: Bracket);
 }
 pub fn process<Wrapper: NodeWrapping, State: Parser<Wrapper> + Display>(
     state: &mut State,
@@ -268,7 +258,7 @@ pub fn process<Wrapper: NodeWrapping, State: Parser<Wrapper> + Display>(
             let op: UnaryOp = op.into();
             if state.points_to_some_node() {
                 state.go_to_binding_pow(op.binding_pow());
-                let operand = state.current_node_id().unwrap();
+                let operand = state.current();
                 let operand = state.reallocate(operand);
                 state.set(
                     operand,
@@ -317,7 +307,7 @@ pub fn process<Wrapper: NodeWrapping, State: Parser<Wrapper> + Display>(
             } else {
                 state.make_binary_operator(pos, |left, right| Node::ChainedOp {
                     first: left,
-                    additions: NonEmptyVec::new((op, right)),
+                    additions: [(op, right)].into(),
                 });
             }
         }
@@ -338,47 +328,43 @@ pub fn process<Wrapper: NodeWrapping, State: Parser<Wrapper> + Display>(
                 state.add_val(val)
             }
         }
-        OpenBracket { squared } => {
+        OpenBracket { kind } if matches!(kind, Bracket::Round | Bracket::Squared) => {
             let content = state.add(Wrapper::new(pos.only_end() + 1));
-            let brackets = Wrapper::new(pos).with_node(Node::Brackets { squared, content });
-
-            match state.current() {
-                Pointer::Node(node) => match state.get(node).node() {
-                    Some(..) => {
-                        state.go_to_binding_pow(19); // application binding power
-                        let node = state.current().unwrap();
-                        let left = state.reallocate(node);
-                        state.set(
-                            node,
-                            Wrapper::new(pos).with_node(Node::BinaryOp {
-                                op: if squared {
-                                    BinaryOp::Index
-                                } else {
-                                    BinaryOp::App
-                                },
-                                left,
-                                right: content,
-                            }),
-                        );
-                    }
-                    None => state.set(node, brackets),
-                },
-                Pointer::Scope(scope) => {
-                    let id = state.push(scope, brackets);
-                    state.move_down(id);
+            let brackets = Wrapper::new(pos).with_node(Node::Brackets { kind, content });
+            match state.current_node() {
+                Some(..) => {
+                    state.go_to_binding_pow(19); // application binding power
+                    let node = state.current();
+                    let left = state.reallocate(node);
+                    state.set(
+                        node,
+                        Wrapper::new(pos).with_node(Node::BinaryOp {
+                            op: if kind == Bracket::Round {
+                                BinaryOp::App
+                            } else {
+                                BinaryOp::Index
+                            },
+                            left,
+                            right: content,
+                        }),
+                    );
                 }
+                None => state.set(state.current(), brackets),
             }
             state.move_down(content)
         }
-        ClosedBracket {
-            squared: own_squared,
-        } => state.handle_closed_bracket(pos, if own_squared { "]" } else { ")" }),
-        OpenCurly => {
-            let scope = state.add_scope();
-            state.add_val(Wrapper::new(pos).with_node(Node::Scope(scope)));
-            state.move_into_new_scope(scope);
+        OpenBracket {
+            kind: Bracket::Curly,
+        } => {
+            let content = state.add(Wrapper::new(pos.only_end() + 1));
+            let brackets = Wrapper::new(pos).with_node(Node::Brackets {
+                kind: Bracket::Curly,
+                content,
+            });
+            state.add_val(brackets);
+            state.move_down(content)
         }
-        ClosedCurly => state.handle_closed_bracket(pos, "}"),
+        ClosedBracket { kind } => state.handle_closed_bracket(pos, kind),
         Comma => {
             if !state.points_to_some_node() {
                 // { , }
@@ -397,7 +383,7 @@ pub fn process<Wrapper: NodeWrapping, State: Parser<Wrapper> + Display>(
                 unpack!(state.current_node_mut() => Some(Node::List(list)) => list.push(right));
                 state.move_down(right)
             } else {
-                state.make_binary_operator(pos, |left, right| Node::List(vec![left, right]));
+                state.make_binary_operator(pos, |left, right| Node::List([left, right].into()));
             }
         }
         Colon => {
@@ -407,9 +393,11 @@ pub fn process<Wrapper: NodeWrapping, State: Parser<Wrapper> + Display>(
                 unpack!(state.current_node_mut() => Some(Node::ColonStruct(list)) => list.push(right));
                 state.move_down(right)
             } else if state.points_to_some_node() {
-                state.make_binary_operator(pos, |left, right| Node::ColonStruct(vec![left, right]));
+                state.make_binary_operator(pos, |left, right| {
+                    Node::ColonStruct([left, right].into())
+                });
             }
         }
-        EoF => {}
+        _ => {}
     }
 }

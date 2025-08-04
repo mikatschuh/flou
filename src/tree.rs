@@ -1,13 +1,13 @@
 use num::BigUint;
 
 use crate::{
+    comp,
     error::Position,
     parser::tokenizing::{
         binary_op::BinaryOp, chained_op::ChainedOp, unary_op::UnaryOp,
         with_written_out_escape_sequences, EscapeSequenceConfusion,
     },
     typing::Type,
-    utilities::NonEmptyVec,
 };
 // use colored::Colorize;
 use std::{
@@ -45,6 +45,7 @@ impl Unwrapable for NonNullNodeWrapper {
     }
 }
 const DISPLAY_INDENTATION: &str = "|   ";
+const DISPLAY_INDENTATION_NEG_1: &str = "   ";
 #[derive(Debug, Clone, PartialEq)]
 pub struct NodeWrapper {
     pos: Position,
@@ -67,7 +68,6 @@ impl NodeWrapping for NodeWrapper {
         self.notes.push(comment);
         self
     }
-    #[inline]
     fn add_notes(mut self, mut comments: Vec<Note>) -> Self {
         self.notes.append(&mut comments);
         self
@@ -111,9 +111,6 @@ impl NodeWrapping for NodeWrapper {
         format!(
             "{}",
             match node {
-                Scope(scope) => {
-                    tree[*scope].display(tree, indentation)
-                }
                 Literal {
                     val,
                     imaginary_coefficient,
@@ -141,13 +138,32 @@ impl NodeWrapping for NodeWrapper {
                             + " "
                     )
                 ),
-                Brackets { squared, content } if !squared => format!(
-                    "( {} )",
-                    content.get_wrapper(tree).display(tree, next_indentation)
+                Brackets {
+                    kind: Bracket::Round,
+                    content,
+                } => format!(
+                    "({}{}{})",
+                    DISPLAY_INDENTATION_NEG_1,
+                    content.get_wrapper(tree).display(tree, next_indentation),
+                    DISPLAY_INDENTATION_NEG_1,
                 ),
-                Brackets { squared, content } if *squared => format!(
-                    "[ {} ]",
-                    content.get_wrapper(tree).display(tree, next_indentation)
+                Brackets {
+                    kind: Bracket::Squared,
+                    content,
+                } => format!(
+                    "[{}{}{}]",
+                    DISPLAY_INDENTATION_NEG_1,
+                    content.get_wrapper(tree).display(tree, next_indentation),
+                    DISPLAY_INDENTATION_NEG_1,
+                ),
+                Brackets {
+                    kind: Bracket::Curly,
+                    content,
+                } => format!(
+                    "{{{}{}{}}}",
+                    DISPLAY_INDENTATION_NEG_1,
+                    content.get_wrapper(tree).display(tree, next_indentation),
+                    DISPLAY_INDENTATION_NEG_1
                 ),
                 List(list) =>
                     if list.len() < 2 {
@@ -215,22 +231,22 @@ impl NodeWrapping for NodeWrapper {
                                 .display(tree, next_indentation.clone())
                         )
                     } else {
-                        let mut list = content.iter();
-                        format!(
-                            "{}{}",
-                            list.next()
-                                .unwrap()
-                                .get_wrapper(tree)
-                                .display(tree, indentation.clone()),
-                            list.map(|item| {
-                                format!(
-                                    "\n{}{}",
-                                    indentation.clone(),
-                                    item.get_wrapper(tree).display(tree, indentation.clone())
-                                )
-                            })
-                            .collect::<String>(),
-                        )
+                        let mut string = String::new();
+                        if content.len() == 0 {
+                            string += &format!("\n{}", next_indentation,)
+                        } else {
+                            content
+                                .into_iter()
+                                .map(|node| &tree[*node])
+                                .for_each(|node| {
+                                    string += &format!(
+                                        "\n{}{}",
+                                        next_indentation,
+                                        &node.display(&tree, next_indentation.clone())
+                                    )
+                                });
+                        }
+                        format!("_{string}\n{indentation}¯")
                     },
                 ChainedOp { first, additions } => format!(
                     "Chained  {}{}",
@@ -267,51 +283,50 @@ pub enum Note {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Scope {
-    pub content: Vec<NodeId>,
+pub struct Path {
+    pub content: NodeId,
 }
-impl Scope {
-    pub fn new() -> Self {
-        Self { content: vec![] }
-    }
-    pub fn push(&mut self, node: NodeId) {
-        self.content.push(node)
+impl Path {
+    pub fn new(content: NodeId) -> Self {
+        Self { content }
     }
     pub fn display(&self, tree: &Tree<impl NodeWrapping>, indentation: String) -> String {
-        let next_indentation = indentation.clone() + DISPLAY_INDENTATION;
-        let mut string = String::new();
-        if self.content.len() == 0 {
-            string += &format!("\n{}", next_indentation,)
-        } else {
-            for node in self.into_iter().map(|node| &tree[*node]) {
-                string += &format!(
-                    "\n{}{}",
-                    next_indentation,
-                    &node.display(&tree, next_indentation.clone())
-                )
-            }
+        format!(
+            "{}",
+            self.content.get_wrapper(tree).display(tree, indentation)
+        )
+    }
+}
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Bracket {
+    Round,
+    Squared,
+    Curly,
+}
+impl Bracket {
+    pub fn display_open(self) -> &'static str {
+        match self {
+            Bracket::Round => "(",
+            Bracket::Squared => "[",
+            Bracket::Curly => "{",
         }
-        format!("{{{string}\n{indentation}}}")
+    }
+    pub fn display_closed(self) -> &'static str {
+        match self {
+            Bracket::Round => ")",
+            Bracket::Squared => "]",
+            Bracket::Curly => "}",
+        }
     }
 }
-impl<'a> IntoIterator for &'a Scope {
-    type Item = &'a NodeId;
-    type IntoIter = std::slice::Iter<'a, NodeId>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.content.iter()
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum Node {
-    Scope(ScopeId), // { ... }
     // control flow structures
     Conditional {
         condition: NodeId,
         looping: bool,
-        then_body: NodeId,
-        else_body: Option<NodeId>,
+        then_body: Path,
+        else_body: Option<Path>,
     }, // if/loop condition then_body (else else_body)
     // single values
     Literal {
@@ -325,9 +340,9 @@ pub enum Node {
     PrimitiveType(Type), // u32, i32, c32, f32, ...
 
     // multiple values
-    List(Vec<NodeId>),        // a, b, c, d, ...
-    ColonStruct(Vec<NodeId>), // a : b : c : d
-    Statements(Vec<NodeId>),
+    List(comp::Vec<NodeId, 2>),        // a, b, c, d, ...
+    ColonStruct(comp::Vec<NodeId, 2>), // a : b : c : d
+    Statements(comp::Vec<NodeId, 2>),
 
     // operations
     BinaryOp {
@@ -337,14 +352,14 @@ pub enum Node {
     }, // left op right
     ChainedOp {
         first: NodeId,
-        additions: NonEmptyVec<(ChainedOp, NodeId)>,
+        additions: comp::Vec<(ChainedOp, NodeId), 1>,
     }, // first op additions[0].0 additions[0].1
     UnaryOp {
         op: UnaryOp,
         operand: NodeId,
     }, // op operand
     Brackets {
-        squared: bool,
+        kind: Bracket,
         content: NodeId,
     }, // squared content squared
 }
@@ -489,21 +504,9 @@ impl NonNullNodeId {
         &mut tree[self.0]
     }
 }
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct ScopeId(usize);
-impl ScopeId {
-    pub fn get<W: NodeWrapping>(self, tree: &Tree<W>) -> &Scope {
-        &tree.scopes[self.0]
-    }
-    pub fn get_mut<W: NodeWrapping>(self, tree: &mut Tree<W>) -> &mut Scope {
-        &mut tree.scopes[self.0]
-    }
-}
 #[derive(Clone, Debug)]
 pub struct Tree<W: NodeWrapping> {
     nodes: Vec<W>,
-    scopes: Vec<Scope>,
 }
 impl<Wrapper: NodeWrapping> Index<NodeId> for Tree<Wrapper> {
     type Output = Wrapper;
@@ -527,37 +530,24 @@ impl<W: NodeWrapping> IndexMut<NonNullNodeId> for Tree<W> {
         &mut self.nodes[index.0 .0]
     }
 }
-impl<W: NodeWrapping> Index<ScopeId> for Tree<W> {
-    type Output = Scope;
-    fn index(&self, index: ScopeId) -> &Self::Output {
-        &self.scopes[index.0]
-    }
-}
-impl<W: NodeWrapping> IndexMut<ScopeId> for Tree<W> {
-    fn index_mut(&mut self, index: ScopeId) -> &mut Self::Output {
-        &mut self.scopes[index.0]
-    }
-}
-impl<W: NodeWrapping> Tree<W> {
+impl<Wrapper: NodeWrapping> Tree<Wrapper> {
     pub fn new() -> Self {
-        Self {
-            nodes: vec![],
-            scopes: vec![],
-        }
+        Self { nodes: vec![] }
     }
-    pub fn add(&mut self, node: W) -> NodeId {
+    pub fn add(&mut self, node: Wrapper) -> NodeId {
         self.nodes.push(node);
         NodeId(self.nodes.len() - 1)
+    }
+    #[inline]
+    pub fn add_root(&mut self, node: Wrapper) -> NodeId {
+        assert!(self.nodes.len() == 0);
+        self.add(node)
     }
     pub fn move_to_new_location(&mut self, node: NodeId) -> NodeId {
         self.add(self[node].clone())
     }
-    pub fn add_scope(&mut self) -> ScopeId {
-        self.scopes.push(Scope::new());
-        ScopeId(self.scopes.len() - 1)
-    }
-    pub fn root(&self) -> &Scope {
-        &self.scopes[0]
+    pub fn root(&self) -> &Wrapper {
+        &self.nodes[0]
     }
 }
 
