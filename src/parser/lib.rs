@@ -1,5 +1,5 @@
 use crate::{
-    error::{ErrorCode, Errors, Position},
+    error::{ErrorCode, Errors, Span},
     parser::{
         num::value_to_node,
         tokenizing::binary_op::{BinaryOp, BindingPow},
@@ -9,15 +9,15 @@ use crate::{
     tree::{Bracket, Node, NodeId, NodeWrapping},
     unpack, Formatter,
 };
-impl<Wrapper: NodeWrapping> Getting<Wrapper> for PrattParser<Wrapper> {
+impl<'a, Wrapper: NodeWrapping> Getting<'a, Wrapper> for PrattParser<'a, Wrapper> {
     fn formatter(&self) -> Formatter {
         self.formatter
     }
-    fn errors(&mut self) -> &mut Errors {
+    fn errors(&mut self) -> &mut Errors<'a> {
         &mut self.errors
     }
 }
-impl<Wrapper: NodeWrapping> Parser<Wrapper> for PrattParser<Wrapper> {
+impl<'a, Wrapper: NodeWrapping> Parser<'a, Wrapper> for PrattParser<'a, Wrapper> {
     #[inline]
     fn add(&mut self, val: Wrapper) -> NodeId {
         self.tree.add(val)
@@ -31,7 +31,7 @@ impl<Wrapper: NodeWrapping> Parser<Wrapper> for PrattParser<Wrapper> {
         self.tree.move_to_new_location(id)
     }
     #[inline]
-    fn value_to_node(&mut self, string: String, pos: Position) -> Wrapper {
+    fn value_to_node(&mut self, string: &'a str, pos: Span) -> Wrapper {
         value_to_node(string, pos, &mut self.tree)
     }
     fn add_val(&mut self, val: Wrapper) {
@@ -55,7 +55,7 @@ impl<Wrapper: NodeWrapping> Parser<Wrapper> for PrattParser<Wrapper> {
                 higher
                     .get_wrapper_mut(&mut self.tree)
                     .pos_mut()
-                    .set_end(val.pos().end_line, val.pos().end_char);
+                    .set_end(val.pos().end_line, val.pos().end_collum);
             }
             *self.current_wrapper_mut() = val;
         }
@@ -86,16 +86,16 @@ impl<Wrapper: NodeWrapping> Parser<Wrapper> for PrattParser<Wrapper> {
     }
     fn make_binary_operator(
         &mut self,
-        pos: Position,
+        pos: Span,
         binary_operator: impl Fn(NodeId, NodeId) -> Node,
     ) {
         let left = self.current();
-        let right = self.tree.add(Wrapper::new(pos.only_end() + 1));
+        let right = self.tree.add(Wrapper::new(pos.end() + 1));
         self.tree[left] = Wrapper::new(left.get_wrapper(&self.tree).pos() | pos + 1)
             .with_node(binary_operator(self.tree.move_to_new_location(left), right));
         self.move_down(right);
     }
-    fn handle_closed_bracket(&mut self, pos: Position, bracket: Bracket) {
+    fn handle_closed_bracket(&mut self, pos: Span, bracket: Bracket) {
         while let Some(higher) = self.higher() {
             match higher.get(&self.tree).unwrap() // unwrapping is ok since this is the higher layer
             {
@@ -104,21 +104,21 @@ impl<Wrapper: NodeWrapping> Parser<Wrapper> for PrattParser<Wrapper> {
                     self.move_up();
                     self.current_wrapper_mut()
                         .pos_mut()
-                        .set_end(pos.end_line, pos.end_char);
+                        .set_end(pos.end_line, pos.end_collum);
                     return;
                 }
                 Node::BinaryOp { op, .. } if matches!(op, BinaryOp::App | BinaryOp::Index) => {
                     self.errors.push(
                         pos,
                         ErrorCode::WrongClosedBracket {
-                            expected: if *op == BinaryOp::App { ")" } else { "]" }.to_owned(),
-                            found: bracket.display_closed().to_owned(),
+                            expected: if *op == BinaryOp::App { Bracket::Round } else { Bracket::Squared }.to_owned(),
+                            found: bracket,
                         },
                     );
                     self.move_up();
                     self.current_wrapper_mut()
                         .pos_mut()
-                        .set_end(pos.end_line, pos.end_char);
+                        .set_end(pos.end_line, pos.end_collum);
                     return;
                 }
                 Node::Brackets { kind, .. }
@@ -129,31 +129,27 @@ impl<Wrapper: NodeWrapping> Parser<Wrapper> for PrattParser<Wrapper> {
                     self.move_up();
                     self.current_wrapper_mut()
                         .pos_mut()
-                        .set_end(pos.end_line, pos.end_char);
+                        .set_end(pos.end_line, pos.end_collum);
                     return;
                 }
                 Node::Brackets { kind, .. } => {
                     self.errors.push(
                         pos,
                         ErrorCode::WrongClosedBracket {
-                            expected: kind.display_closed().to_owned(),
-                            found: bracket.display_closed().to_owned(),
+                            expected:*kind,
+                            found: bracket,
                         },
                     );
                     self.move_up();
                     self.current_wrapper_mut()
                         .pos_mut()
-                        .set_end(pos.end_line, pos.end_char);
+                        .set_end(pos.end_line, pos.end_collum);
                     return;
                 }
                 _ => self.move_up(),
             }
         }
-        self.errors.push(
-            pos,
-            ErrorCode::NoOpenedBracket {
-                closed: bracket.display_closed().to_owned(),
-            },
-        );
+        self.errors
+            .push(pos, ErrorCode::NoOpenedBracket { closed: bracket });
     }
 }

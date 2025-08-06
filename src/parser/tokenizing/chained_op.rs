@@ -36,3 +36,15 @@ impl BindingPow for ChainedOp {
         }
     }
 }
+impl ChainedOp {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Equal => "==",
+            NonEqual => "!=",
+            Smaller => "<",
+            GreaterOrEqual => ">=",
+            Greater => ">",
+            SmallerOrEqual => "<=",
+        }
+    }
+}

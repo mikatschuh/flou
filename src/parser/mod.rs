@@ -1,24 +1,20 @@
-use std::{
-    fmt::{Debug, Display},
-    path::Path,
-};
+use std::path::Path;
 
 use crate::{
-    error::{ErrorCode, Errors, Position},
+    error::{ErrorCode, Errors, Span},
     parser::tokenizing::{
         binary_op::{
             BinaryOp::{self},
             BindingPow,
         },
         chained_op::ChainedOp,
-        into_op::split_operator,
         keyword::Keyword,
+        token::{Token, TokenKind},
         unary_op::{
-            PostfixUnaryOp,
             PrefixUnaryOp::{self},
             UnaryOp,
         },
-        EscapeSequenceConfusion, Tokenizer,
+        Tokenizer,
     },
     tree::{
         Bracket,
@@ -29,102 +25,42 @@ use crate::{
     utilities::Rc,
     Formatter,
 };
-use colored::{ColoredString, Colorize};
-
-mod debug;
 pub mod item;
 mod lib;
 pub mod num;
+pub mod str_ref;
 pub mod tokenizing;
 mod tree_navigation;
 use tree_navigation::*;
 
-pub fn parse(text: &str, path: &'static Path) -> (String, Rc<Errors>) {
-    let mut errors = Rc::new(Errors::empty());
+pub fn parse<'a>(text: &'a str, path: &'static Path) -> (String, Rc<Errors<'a>>) {
+    let errors = Rc::new(Errors::empty(path));
     let mut parser =
         PrattParser::<NodeWrapper>::new(Formatter { enabled: true }, errors.clone(), path);
-    let mut tokens: Vec<(Position, Token)> = vec![];
-    let mut push_token = |pos: Position, token: Token| tokens.push((pos, token));
-    let mut tokenizer = Tokenizer::new(path);
-    text.chars()
-        .for_each(|c| tokenizer.process_char(&mut errors, c, &mut push_token));
-    tokenizer.end_of_file(&mut errors, &mut push_token);
-    tokens.reverse();
-    while let Some(token) = tokens.pop() {
-        process(&mut parser, token, &mut tokens);
+
+    let mut tokenizer = Tokenizer::new(text, errors.clone());
+    loop {
+        if let Some(..) = tokenizer.next() {
+            process(&mut parser, &mut tokenizer);
+            break;
+        }
+        process(&mut parser, &mut tokenizer);
     }
     let tree = parser.tree();
     //println!("{:?}", tree);
     (tree.to_string(), errors)
 }
-#[derive(PartialEq, Debug, Clone)]
-pub enum Token {
-    UnknownOp(String),
-    Prefix(PrefixUnaryOp),
-    Postfix(PostfixUnaryOp),
-    Infix(BinaryOp),
-    ChainedOp(ChainedOp),
 
-    Quote {
-        quote: String,
-        confusions: Vec<EscapeSequenceConfusion>,
-    },
-    Val(String),
-
-    OpenBracket {
-        kind: Bracket,
-    },
-    ClosedBracket {
-        kind: Bracket,
-    },
-
-    Comma,
-    Colon,
-
-    EoF,
-}
-impl Display for Token {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use Token::*;
-        write!(
-            f,
-            "{}",
-            match self {
-                UnknownOp(op) => op.bold(),
-                Prefix(op) => format!("{}", op).bold(),
-                Postfix(op) => format!("{}", op).bold(),
-                Infix(op) => format!("{}", op).bold(),
-                ChainedOp(op) => format!("{}", op).bold(),
-
-                Quote { quote, .. } => format!("\"{}\"", quote).bold(),
-                Val(val) => format!("{}", val).bold(),
-
-                OpenBracket { kind } => kind.display_open().bold(),
-                ClosedBracket { kind } => kind.display_closed().bold(),
-
-                Comma => ",".bold(),
-                Colon => ":".bold(),
-
-                EoF => "EoF".bold(),
-            }
-        )
-    }
-}
-impl Token {
-    pub fn bold(&self) -> ColoredString {
-        format!("{}", self).bold()
-    }
-}
-pub struct PrattParser<Wrapper: NodeWrapping> {
+pub struct PrattParser<'a, Wrapper: NodeWrapping> {
     formatter: Formatter,
     tree: Tree<Wrapper>,
-    errors: Rc<Errors>,
+    errors: Rc<Errors<'a>>,
     parse_stack: ParseStack,
 }
-impl<Wrapper: NodeWrapping> PrattParser<Wrapper> {
-    fn new(formatter: Formatter, errors: Rc<Errors>, path: &'static Path) -> Self {
+impl<'a, Wrapper: NodeWrapping> PrattParser<'a, Wrapper> {
+    fn new(formatter: Formatter, errors: Rc<Errors<'a>>, path: &'static Path) -> Self {
         let mut tree = Tree::<Wrapper>::new();
-        let root = tree.add_root(Wrapper::new(Position::new(path)));
+        let root = tree.add_root(Wrapper::new(Span::beginning()));
         Self {
             parse_stack: ParseStack::new(root),
             formatter,
@@ -136,15 +72,15 @@ impl<Wrapper: NodeWrapping> PrattParser<Wrapper> {
         self.tree
     }
 }
-pub trait Getting<Wrapper: NodeWrapping> {
+pub trait Getting<'a, Wrapper: NodeWrapping> {
     fn formatter(&self) -> Formatter;
-    fn errors(&mut self) -> &mut Errors;
+    fn errors(&mut self) -> &mut Errors<'a>;
 }
-pub trait Parser<Wrapper: NodeWrapping>: TreeNavi<Wrapper> + Getting<Wrapper> {
+pub trait Parser<'a, Wrapper: NodeWrapping>: TreeNavi<Wrapper> + Getting<'a, Wrapper> {
     fn add(&mut self, val: Wrapper) -> NodeId;
     fn set(&mut self, id: NodeId, val: Wrapper);
     fn reallocate(&mut self, id: NodeId) -> NodeId;
-    fn value_to_node(&mut self, string: String, pos: Position) -> Wrapper;
+    fn value_to_node(&mut self, string: &'a str, pos: Span) -> Wrapper;
     fn add_val(&mut self, val: Wrapper);
     /// Moves up until its at the right height. It will only ever move into nodes.
     fn go_to_binding_pow(&mut self, binding_pow: i8);
@@ -163,31 +99,27 @@ pub trait Parser<Wrapper: NodeWrapping>: TreeNavi<Wrapper> + Getting<Wrapper> {
     ///     /    \
     ///  Node    New Node   <--
     /// ```
-    fn make_binary_operator(
-        &mut self,
-        pos: Position,
-        binary_operator: impl Fn(NodeId, NodeId) -> Node,
-    );
-    fn handle_closed_bracket(&mut self, pos: Position, bracket: Bracket);
+    fn make_binary_operator(&mut self, pos: Span, binary_operator: impl Fn(NodeId, NodeId) -> Node);
+    fn handle_closed_bracket(&mut self, pos: Span, bracket: Bracket);
 }
-pub fn process<Wrapper: NodeWrapping, State: Parser<Wrapper> + Display>(
+pub fn process<'a, Wrapper: NodeWrapping, State: Parser<'a, Wrapper>>(
     state: &mut State,
-    (pos, token): (Position, Token),
-    token_stream: &mut Vec<(Position, Token)>,
+    token_stream: &mut Tokenizer<'a>,
 ) {
+    let token = token_stream.next(state.errors());
     state.formatter().input(&token);
-    use Token::*;
-    match token {
-        UnknownOp(op) => {
-            split_operator(state.errors(), op, pos)
+    use TokenKind::*;
+    match token.kind {
+        UnknownOp => {
+            split_operator(state.errors(), token.src, token.span)
                 .rev()
-                .for_each(|(pos, token)| token_stream.push((pos, token)));
+                .for_each(|(pos, token)| token_stream.buffer((pos, token)));
             return;
         }
         Prefix(op) => {
             let op: UnaryOp = op.into();
             if matches!(op, UnaryOp::Neg | UnaryOp::Pos) && state.points_to_some_node() {
-                token_stream.push((
+                token_stream.buffer((
                     pos,
                     Infix(if op == UnaryOp::Pos {
                         BinaryOp::Add
@@ -199,44 +131,45 @@ pub fn process<Wrapper: NodeWrapping, State: Parser<Wrapper> + Display>(
                         //   ¯¯¯
             } else if let UnaryOp::Not = op {
                 let mut invertion = true;
-                while let Some((next_pos, next)) = token_stream.pop() {
+                loop {
+                    let (next_pos, next) = token_stream.next(state.errors());
                     match next {
                         Prefix(PrefixUnaryOp::Not) => {
                             invertion = !invertion;
                             continue;
                         }
                         Infix(BinaryOp::Or(inverted)) => token_stream
-                            .push((pos | next_pos, Infix(BinaryOp::Or(invertion != inverted)))),
+                            .buffer((pos | next_pos, Infix(BinaryOp::Or(invertion != inverted)))),
                         Infix(BinaryOp::Xor(inverted)) => token_stream
-                            .push((pos | next_pos, Infix(BinaryOp::Xor(invertion != inverted)))),
+                            .buffer((pos | next_pos, Infix(BinaryOp::Xor(invertion != inverted)))),
                         Infix(BinaryOp::And(inverted)) => token_stream
-                            .push((pos | next_pos, Infix(BinaryOp::And(invertion != inverted)))),
-                        Infix(BinaryOp::BitOr(inverted)) => token_stream.push((
+                            .buffer((pos | next_pos, Infix(BinaryOp::And(invertion != inverted)))),
+                        Infix(BinaryOp::BitOr(inverted)) => token_stream.buffer((
                             pos | next_pos,
                             Infix(BinaryOp::BitOr(invertion != inverted)),
                         )),
-                        Infix(BinaryOp::BitXor(inverted)) => token_stream.push((
+                        Infix(BinaryOp::BitXor(inverted)) => token_stream.buffer((
                             pos | next_pos,
                             Infix(BinaryOp::BitXor(invertion != inverted)),
                         )),
-                        Infix(BinaryOp::BitAnd(inverted)) => token_stream.push((
+                        Infix(BinaryOp::BitAnd(inverted)) => token_stream.buffer((
                             pos | next_pos,
                             Infix(BinaryOp::BitAnd(invertion != inverted)),
                         )),
-                        Infix(BinaryOp::OrAssign(inverted)) => token_stream.push((
+                        Infix(BinaryOp::OrAssign(inverted)) => token_stream.buffer((
                             pos | next_pos,
                             Infix(BinaryOp::OrAssign(invertion != inverted)),
                         )),
-                        Infix(BinaryOp::XorAssign(inverted)) => token_stream.push((
+                        Infix(BinaryOp::XorAssign(inverted)) => token_stream.buffer((
                             pos | next_pos,
                             Infix(BinaryOp::XorAssign(invertion != inverted)),
                         )),
-                        Infix(BinaryOp::AndAssign(inverted)) => token_stream.push((
+                        Infix(BinaryOp::AndAssign(inverted)) => token_stream.buffer((
                             pos | next_pos,
                             Infix(BinaryOp::AndAssign(invertion != inverted)),
                         )),
                         _ => {
-                            token_stream.push((next_pos, next));
+                            token_stream.buffer((next_pos, next));
                             let operand = state.add(Wrapper::new(pos.only_end() + 1));
                             let unary_op = Wrapper::new(pos).with_node(Node::UnaryOp {
                                 op: UnaryOp::Not,
@@ -269,7 +202,7 @@ pub fn process<Wrapper: NodeWrapping, State: Parser<Wrapper> + Display>(
                     UnaryOp::Increment => PrefixUnaryOp::Pos,
                     _ => PrefixUnaryOp::Neg,
                 };
-                (0..2).for_each(|_| token_stream.push((pos, Prefix(unary_op))));
+                (0..2).for_each(|_| token_stream.buffer((pos, Prefix(unary_op))));
                 return; // { ++/--
                         //   ¯¯¯¯¯
             }
@@ -279,7 +212,7 @@ pub fn process<Wrapper: NodeWrapping, State: Parser<Wrapper> + Display>(
                 state.errors().push(
                     pos,
                     ErrorCode::ExpectedValue {
-                        found: op.to_string(),
+                        found: op.as_str().into(),
                     },
                 );
                 return;
@@ -294,7 +227,7 @@ pub fn process<Wrapper: NodeWrapping, State: Parser<Wrapper> + Display>(
                 state.errors().push(
                     pos,
                     ErrorCode::ExpectedValue {
-                        found: op.to_string(),
+                        found: op.as_str().into(),
                     },
                 );
                 return;
@@ -320,7 +253,7 @@ pub fn process<Wrapper: NodeWrapping, State: Parser<Wrapper> + Display>(
             );
             state.add_val(quote)
         }
-        Val(val) => {
+        Ident(val) => {
             if let Some(keyword) = Keyword::from_str(&val) {
                 todo!()
             } else {
@@ -369,12 +302,9 @@ pub fn process<Wrapper: NodeWrapping, State: Parser<Wrapper> + Display>(
             if !state.points_to_some_node() {
                 // { , }
                 //  ¯¯
-                state.errors().push(
-                    pos,
-                    ErrorCode::ExpectedValue {
-                        found: ",".to_owned(),
-                    },
-                );
+                state
+                    .errors()
+                    .push(pos, ErrorCode::ExpectedValue { found: ",".into() });
                 return;
             }
             state.go_to_binding_pow(3); // binding power of comma

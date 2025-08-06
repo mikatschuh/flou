@@ -8,9 +8,12 @@ pub enum BinaryOp {
 
     Write, // a := b
 
-    OrAssign(bool),  // a |= b
-    XorAssign(bool), // a >|= b
-    AndAssign(bool), // a &= b
+    OrAssign,   // a |= b
+    NorAssign,  // a !|= b
+    XorAssign,  // a >|= b
+    XnorAssign, // a !>|= b
+    AndAssign,  // a &= b
+    NandAssign, // a !&= b
 
     AddAssign, // a += b
     SubAssign, // a -= b
@@ -21,13 +24,19 @@ pub enum BinaryOp {
 
     Swap, // a =|= b
 
-    Or(bool),  // a || b
-    Xor(bool), // a >|| b
-    And(bool), // a && b
+    Or,   // a || b
+    Nor,  // a !|| b
+    Xor,  // a >|| b
+    Xnor, // a !>|| b
+    And,  // a && b
+    Nand, // a !&& b
 
-    BitOr(bool),  // a | b
-    BitXor(bool), // a >| b
-    BitAnd(bool), // a & b
+    BitOr,   // a | b
+    BitNor,  // a !| b
+    BitXor,  // a >| b
+    BitXnor, // a !>| b
+    BitAnd,  // a & b
+    BitNand, // a !& b
 
     Add, // a + b
     Sub, // a - b
@@ -46,60 +55,7 @@ pub enum BinaryOp {
 use std::fmt;
 impl fmt::Display for BinaryOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use BinaryOp::*;
-        write!(
-            f,
-            "{}",
-            match self {
-                Equation => "=",
-
-                Write => ":=",
-
-                AndAssign(false) => "&=",
-                AndAssign(true) => "!&=",
-                OrAssign(false) => "|=",
-                OrAssign(true) => "!|=",
-                XorAssign(false) => ">|=",
-                XorAssign(true) => "!>|=",
-
-                AddAssign => "+=",
-                SubAssign => "-=",
-
-                MulAssign => "*=",
-                DivAssign => "/=",
-                ModAssign => "%=",
-
-                Swap => "=|=",
-
-                Or(false) => "||",
-                Or(true) => "!||",
-                And(false) => "&&",
-                And(true) => "!&&",
-                Xor(false) => ">||",
-                Xor(true) => "!>||",
-
-                BitOr(false) => "|",
-                BitOr(true) => "!|",
-                BitAnd(false) => "&",
-                BitAnd(true) => "!&",
-                BitXor(false) => ">|",
-                BitXor(true) => "!>|",
-
-                Add => "+",
-                Sub => "-",
-
-                Mul => "*",
-                Div => "/",
-                Mod => "%",
-
-                Dot => "·",
-                Cross => "><",
-                Power => "^",
-
-                Index => "index",
-                App => "app",
-            }
-        )
+        write!(f, "{}", self.as_str())
     }
 }
 use BinaryOp::*;
@@ -108,19 +64,19 @@ impl BindingPow for BinaryOp {
         match self {
             Equation => 1, // a = b
 
-            Write | OrAssign(..) | XorAssign(..) | AndAssign(..) | AddAssign | SubAssign
-            | MulAssign | DivAssign | ModAssign | Swap => 2,
+            Write | OrAssign | NorAssign | XorAssign | XnorAssign | AndAssign | NandAssign
+            | AddAssign | SubAssign | MulAssign | DivAssign | ModAssign | Swap => 2,
 
             // Comma => 3
-            Or(..) => 4,
-            Xor(..) => 5,
-            And(..) => 6,
+            Or | Nor => 4,
+            Xor | Xnor => 5,
+            And | Nand => 6,
 
             // Smaller / Greater / SmallerOrEqual / GreaterOrEqual => 4.1
             // Equal / NotEqual => 4.2
-            BitOr(..) => 8,
-            BitXor(..) => 9,
-            BitAnd(..) => 10,
+            BitOr | BitNor => 8,
+            BitXor | BitXnor => 9,
+            BitAnd | BitNand => 10,
 
             Add | Sub => 11,
 
@@ -130,6 +86,59 @@ impl BindingPow for BinaryOp {
             Dot | Cross | Power => 14,
 
             Index | App => 19,
+        }
+    }
+}
+impl BinaryOp {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Equation => "=",
+
+            Write => ":=",
+
+            OrAssign => "|=",
+            NorAssign => "!|=",
+            XorAssign => ">|=",
+            XnorAssign => "!>|=",
+            AndAssign => "&=",
+            NandAssign => "!&=",
+
+            AddAssign => "+=",
+            SubAssign => "-=",
+
+            MulAssign => "*=",
+            DivAssign => "/=",
+            ModAssign => "%=",
+
+            Swap => "=|=",
+
+            Or => "||",
+            Nor => "!||",
+            Xor => ">||",
+            Xnor => "!>||",
+            And => "&&",
+            Nand => "!&&",
+
+            BitOr => "|",
+            BitNor => "!|",
+            BitXor => ">|",
+            BitXnor => "!>|",
+            BitAnd => "&",
+            BitNand => "!&",
+
+            Add => "+",
+            Sub => "-",
+
+            Mul => "*",
+            Div => "/",
+            Mod => "%",
+
+            Dot => "·",
+            Cross => "><",
+            Power => "^",
+
+            Index => "index",
+            App => "app",
         }
     }
 }

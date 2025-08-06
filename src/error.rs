@@ -3,83 +3,89 @@ use std::any::Any;
 use std::error;
 use std::fmt;
 use std::ops::Add;
-use std::ops::BitOr;
+use std::ops::AddAssign;
 use std::ops::Sub;
+use std::ops::SubAssign;
 
-pub struct Errors(Vec<Error>);
+#[derive(Clone, Debug, PartialEq)]
+pub struct Errors<'a> {
+    file: &'a Path,
+    errors: Vec<Error<'a>>,
+}
 
-impl Errors {
-    pub fn new(pos: Position, error: ErrorCode) -> Self {
-        Self(vec![Error::new(pos, error)])
+impl<'a> Errors<'a> {
+    pub fn new(path: &'a Path, pos: Span, error: ErrorCode<'a>) -> Self {
+        Self {
+            file: path,
+            errors: vec![Error::new(pos, error)],
+        }
     }
-    pub fn empty() -> Self {
-        Self(Vec::new())
+    pub fn empty(path: &'a Path) -> Self {
+        Self {
+            file: path,
+            errors: Vec::new(),
+        }
     }
-    pub fn push(&mut self, pos: Position, error: ErrorCode) {
-        self.0.push(Error::new(pos, error))
+    pub fn push(&mut self, pos: Span, error: ErrorCode<'a>) {
+        self.errors.push(Error::new(pos, error))
     }
-    pub fn concat(&mut self, other: Errors) {
-        self.0.extend(other.0.iter().cloned());
+    pub fn concat(&mut self, other: Errors<'a>) {
+        self.errors.extend(other.errors.iter().cloned());
     }
 }
-impl Add for Errors {
-    type Output = Self;
-    fn add(self, mut rhs: Self) -> Self::Output {
-        let mut res = self.0;
-        res.append(&mut rhs.0);
-        Errors(res)
-    }
-}
-impl fmt::Display for Errors {
+impl fmt::Display for Errors<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut string = String::new();
-        for error in self.0.iter() {
-            string += &format!("{}\n", error);
+        for error in self.errors.iter() {
+            string += &format!("{}\n", error.to_string(self.file));
         }
         write!(f, "{}", string)
     }
 }
-#[derive(Clone)]
-pub struct Error {
-    pos: Position,
-    error: ErrorCode,
+#[derive(Clone, Debug, PartialEq)]
+pub struct Error<'a> {
+    section: Span,
+    error: ErrorCode<'a>,
 }
-#[derive(Clone)]
-pub enum ErrorCode {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ErrorCode<'a> {
     ExpectedValue {
-        found: String,
+        found: &'a str,
     },
     DidntExpectValue {
-        found: String,
+        found: &'a str,
     },
     UnknownOperator {
-        op: String,
+        op: &'a str,
     },
     MissingClosingQuotes {
-        quote: String,
+        quote: &'a str,
     },
     NumberContainedOnlyPrefix {
-        number: String,
+        number: &'a str,
     },
     InvalidCombination {
-        left: Option<Token>,
-        right: Option<Token>,
+        left: Option<Token<'a>>,
+        right: Option<Token<'a>>,
     },
     // control structure mistakes
     ElseWithNoIf,
     SecondElse,
     // bracket errors
     NoOpenedBracket {
-        closed: String,
+        closed: Bracket,
     },
     WrongClosedBracket {
-        expected: String,
-        found: String,
+        expected: Bracket,
+        found: Bracket,
     },
 }
-impl Error {
-    pub fn new(pos: Position, error: ErrorCode) -> Self {
-        Self { pos, error }
+impl<'a> Error<'a> {
+    pub fn new(pos: Span, error: ErrorCode<'a>) -> Self {
+        Self {
+            section: pos,
+            error,
+        }
     }
 }
 
@@ -199,32 +205,37 @@ macro_rules! format_error_arg {
         format!(" {} ", concat_display!{ $($es),+ })
     }};
 }
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Error<'_> {
+    fn to_string(&self, path: &Path) -> String {
         use ErrorCode::*;
-        write!(
-            f,
+        format!(
             "{}",
             match &self.error {
                 UnknownOperator { op } => format_error!(
-                    self.pos,
+                    self.section.to_string(path),
                     "the operator {} is not known to the compiler",
-                    [op]
+                    [*op]
                 ),
-                ExpectedValue { found } =>
-                    format_error!(self.pos, "expected a value found {}", [found]),
-                DidntExpectValue { found } =>
-                    format_error!(self.pos, "didn't expect a value found {}", [found]),
+                ExpectedValue { found } => format_error!(
+                    self.section.to_string(path),
+                    "expected a value found {}",
+                    [*found]
+                ),
+                DidntExpectValue { found } => format_error!(
+                    self.section.to_string(path),
+                    "didn't expect a value found {}",
+                    [*found]
+                ),
                 MissingClosingQuotes { quote } => format_error!(
-                    self.pos,
+                    self.section.to_string(path),
                     "the ending quotes of the quote {} were missing",
                     [format!("{}{}{}", "\"", quote, "\"".red().underline())]
                 ),
                 NumberContainedOnlyPrefix { number } => {
                     format_error!(
-                        self.pos,
+                        self.section.to_string(path),
                         "there was a base prefix and nothing behind, {}",
-                        [number],
+                        [*number],
                         "if you wanted to make an identifier, dont let it start with a number"
                     )
                 }
@@ -232,20 +243,20 @@ impl fmt::Display for Error {
                     if let Some(left) = left {
                         if let Some(right) = right {
                             format_error!(
-                                self.pos,
+                                self.section.to_string(path),
                                 "you can't combine {} with an {}",
                                 [left, right]
                             )
                         } else {
                             format_error!(
-                                self.pos,
+                                self.section.to_string(path),
                                 "{} was followed by a great nothingness",
                                 [left]
                             )
                         }
                     } else if let Some(right) = right {
                         format_error!(
-                            self.pos,
+                            self.section.to_string(path),
                             "{} followed a great nothingness",
                             [right],
                             "place a value infront"
@@ -256,26 +267,26 @@ impl fmt::Display for Error {
                 }
                 ElseWithNoIf => {
                     format_error!(
-                        self.pos,
+                        self.section.to_string(path),
                         "the else - keyword has been used without an if - block infront of it",
                         "you've to add the if block"
                     )
                 }
                 SecondElse => {
-                    format_error!(self.pos, "there was a second else")
+                    format_error!(self.section.to_string(path), "there was a second else")
                 }
                 NoOpenedBracket { closed } => {
                     format_error!(
-                        self.pos,
+                        self.section.to_string(path),
                         "there was a closed bracket {} but no opened one",
-                        [closed]
+                        [closed.display_closed()]
                     )
                 }
                 WrongClosedBracket { expected, found } => {
                     format_error!(
-                        self.pos,
+                        self.section.to_string(path),
                         "found the closed bracket {} but actually expected {}",
-                        [found, expected]
+                        [found.display_closed(), expected.display_closed()]
                     )
                 }
             }
@@ -310,10 +321,11 @@ impl fmt::Display for CliError {
     }
 }
 
-use crate::parser::Token;
+use crate::parser::tokenizing::token::Token;
+use crate::tree::Bracket;
 use std::path::Path;
 
-fn remove_quotes(path: &'static Path) -> String {
+fn remove_quotes(path: &Path) -> String {
     String::from(
         format!("{:?}", path.as_os_str())
             .strip_prefix("\"")
@@ -322,133 +334,163 @@ fn remove_quotes(path: &'static Path) -> String {
             .unwrap(),
     )
 }
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Position {
-    pub file: &'static Path,
-    pub start_line: usize,
-    pub start_char: usize,
-    pub end_line: usize,
-    pub end_char: usize,
+    pub collum: usize,
+    pub line: usize,
 }
 impl Position {
-    pub fn new(path: &'static Path) -> Self {
-        Position {
-            file: path,
-            start_char: 1,
-            start_line: 1,
-            end_line: 1,
-            end_char: 1,
+    #[inline]
+    pub fn beginning() -> Self {
+        Position { collum: 1, line: 1 }
+    }
+    #[inline]
+    pub fn at(collum: usize, line: usize) -> Self {
+        Position { collum, line }
+    }
+    #[inline]
+    pub fn next_line(&mut self) {
+        self.line += 1;
+        self.collum = 1;
+    }
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Span {
+    pub start: Position,
+    pub end: Position,
+}
+impl Span {
+    #[inline]
+    pub fn beginning() -> Self {
+        Span {
+            start: Position::beginning(),
+            end: Position::beginning(),
         }
     }
-    pub fn new_at(
-        path: &'static Path,
-        start_line: usize,
-        start_char: usize,
-        end_line: usize,
-        end_char: usize,
-    ) -> Self {
+    #[inline]
+    pub fn at(start_collum: usize, start_line: usize, end_collum: usize, end_line: usize) -> Self {
         Self {
-            file: path,
-            start_line,
-            start_char,
-            end_line,
-            end_char,
+            start: Position::at(start_collum, start_line),
+            end: Position::at(end_collum, end_line),
         }
     }
-    pub fn next_char(&mut self) {
-        self.end_char += 1
-    }
-    pub fn prev_char(&mut self) {
-        self.end_char -= 1
-    }
-    pub fn newline(&mut self) {
-        self.end_line += 1;
-        self.end_char = 1;
-    }
-    pub fn set_new_start(&mut self) {
-        self.start_line = self.end_line;
-        self.start_char = self.end_char;
-    }
-    pub fn set_end(&mut self, end_line: usize, end_char: usize) {
-        self.end_line = end_line;
-        self.end_char = end_char;
-    }
-    pub fn with_end(mut self, end_line: usize, end_char: usize) -> Self {
-        self.end_line = end_line;
-        self.end_char = end_char;
+    #[inline]
+    pub fn end(mut self) -> Self {
+        self.start.line = self.end.line;
+        self.start.collum = self.end.collum;
         self
     }
-    pub fn only_end(mut self) -> Self {
-        self.start_line = self.end_line;
-        self.start_char = self.end_char;
+    #[inline]
+    pub fn end_mut(&mut self) -> &mut Position {
+        &mut self.end
+    }
+    #[inline]
+    pub fn start(mut self) -> Self {
+        self.end.line = self.start.line;
+        self.end.collum = self.start.collum;
         self
     }
-    pub fn only_start(mut self) -> Self {
-        self.end_line = self.start_line;
-        self.end_char = self.start_char;
+    #[inline]
+    pub fn start_mut(&mut self) -> &mut Position {
+        &mut self.start
+    }
+}
+impl Add<usize> for Span {
+    type Output = Self;
+    #[inline]
+    fn add(mut self, rhs: usize) -> Self::Output {
+        self.end.collum += rhs;
         self
     }
-    pub fn one_line_higher(&self) -> Self {
-        Self {
-            file: self.file,
-            start_line: self.start_line,
-            start_char: self.start_char,
-            end_line: self.end_line - 1,
-            end_char: self.end_char,
+}
+impl Sub<usize> for Span {
+    type Output = Self;
+    #[inline]
+    fn sub(mut self, rhs: usize) -> Self::Output {
+        self.end.collum -= rhs;
+        self
+    }
+}
+impl From<Position> for Span {
+    fn from(pos: Position) -> Self {
+        Span {
+            start: pos,
+            end: pos,
         }
     }
 }
 impl Add<usize> for Position {
     type Output = Self;
+    #[inline]
     fn add(mut self, rhs: usize) -> Self::Output {
-        self.end_char += rhs;
+        self.collum += rhs;
         self
     }
 }
 impl Sub<usize> for Position {
     type Output = Self;
+    #[inline]
     fn sub(mut self, rhs: usize) -> Self::Output {
-        self.end_char -= rhs;
+        self.collum -= rhs;
         self
     }
 }
-impl BitOr<Position> for Position {
-    type Output = Position;
+impl AddAssign<usize> for Position {
+    fn add_assign(&mut self, rhs: usize) {
+        self.collum += rhs;
+    }
+}
+impl SubAssign<usize> for Position {
+    fn sub_assign(&mut self, rhs: usize) {
+        self.collum -= rhs;
+    }
+}
+impl Sub<Span> for Span {
+    type Output = Span;
     /// combines the two positions
-    fn bitor(mut self, rhs: Position) -> Self::Output {
-        self.end_line = rhs.end_line;
-        self.end_char = rhs.end_char;
+    #[inline]
+    fn sub(mut self, rhs: Span) -> Self::Output {
+        self.end.line = rhs.end.line;
+        self.end.collum = rhs.end.collum;
         self
     }
 }
-impl fmt::Display for Position {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.start_line == self.end_line {
-            true => match self.start_char == self.end_char {
-                true => write!(
-                    f,
+impl Sub<Position> for Position {
+    type Output = Span;
+    /// subtracts the two positions
+    #[inline]
+    fn sub(self, rhs: Position) -> Self::Output {
+        Span {
+            start: self,
+            end: rhs,
+        }
+    }
+}
+impl Span {
+    fn to_string(&self, path: &Path) -> String {
+        match self.start.line == self.end.line {
+            true => match self.start.collum == self.end.collum {
+                true => format!(
                     "at {}:{}:{}",
-                    remove_quotes(self.file),
-                    self.start_line,
-                    self.start_char
+                    remove_quotes(path),
+                    self.start.line,
+                    self.start.collum
                 ),
-                false => write!(
-                    f,
+                false => format!(
                     "at {}:{}:{} - {}",
-                    remove_quotes(self.file),
-                    self.start_line,
-                    self.start_char,
-                    self.end_char
+                    remove_quotes(path),
+                    self.start.line,
+                    self.start.collum,
+                    self.end.collum
                 ),
             },
-            false => write!(
-                f,
+            false => format!(
                 "at {}:{}:{}-{}:{}",
-                remove_quotes(self.file),
-                self.start_line,
-                self.start_char,
-                self.end_line,
-                self.end_char
+                remove_quotes(path),
+                self.start.line,
+                self.start.collum,
+                self.end.line,
+                self.end.collum
             ),
         }
     }

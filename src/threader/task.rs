@@ -88,8 +88,9 @@ impl Task {
                 if path.file_name() != Some(&OsString::from("inter.flou")) {
                     return Ok(());
                 }
+                let text = read_to_string(path)?;
                 let now = Instant::now();
-                let (ast, errors) = parse(&read_to_string(path)?, path);
+                let (ast, errors) = parse(&text, path);
                 println!(
                     "{}\n{}\n\nparsed in: {}",
                     *errors,

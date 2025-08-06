@@ -2,7 +2,7 @@ use num::BigUint;
 
 use crate::{
     comp,
-    error::Position,
+    error::Span,
     parser::tokenizing::{
         binary_op::BinaryOp, chained_op::ChainedOp, unary_op::UnaryOp,
         with_written_out_escape_sequences, EscapeSequenceConfusion,
@@ -17,7 +17,7 @@ use std::{
 };
 
 pub trait NodeWrapping: Clone + Debug {
-    fn new(pos: Position) -> Self;
+    fn new(pos: Span) -> Self;
     fn add_note(self, comment: Note) -> Self;
     fn add_notes(self, comments: Vec<Note>) -> Self;
     fn with_node(self, node: Node) -> Self;
@@ -25,8 +25,8 @@ pub trait NodeWrapping: Clone + Debug {
     fn node_mut(&mut self) -> &mut Option<Node>;
     fn node(&self) -> Option<&Node>;
     fn typed(&self) -> Option<Type>;
-    fn pos(&self) -> Position;
-    fn pos_mut(&mut self) -> &mut Position;
+    fn pos(&self) -> Span;
+    fn pos_mut(&mut self) -> &mut Span;
 
     fn display(&self, tree: &Tree<Self>, indentation: String) -> String;
 }
@@ -34,7 +34,7 @@ pub trait NodeWrapping: Clone + Debug {
 #[derive(Debug, Clone)]
 pub struct NonNullNodeWrapper {
     node: Node,
-    pos: Position,
+    pos: Span,
 }
 trait Unwrapable: Clone + Debug {
     fn unwrap(&self) -> &Node;
@@ -48,14 +48,14 @@ const DISPLAY_INDENTATION: &str = "|   ";
 const DISPLAY_INDENTATION_NEG_1: &str = "   ";
 #[derive(Debug, Clone, PartialEq)]
 pub struct NodeWrapper {
-    pos: Position,
+    pos: Span,
     node: Option<Node>,
     typed: Option<Type>,
     notes: Vec<Note>,
 }
 
 impl NodeWrapping for NodeWrapper {
-    fn new(pos: Position) -> Self {
+    fn new(pos: Span) -> Self {
         Self {
             pos,
             node: None,
@@ -95,11 +95,11 @@ impl NodeWrapping for NodeWrapper {
         self.typed
     }
     #[inline]
-    fn pos(&self) -> Position {
+    fn pos(&self) -> Span {
         self.pos
     }
     #[inline]
-    fn pos_mut(&mut self) -> &mut Position {
+    fn pos_mut(&mut self) -> &mut Span {
         &mut self.pos
     }
     fn display(&self, tree: &Tree<Self>, indentation: String) -> String {
@@ -297,7 +297,7 @@ impl Path {
         )
     }
 }
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Bracket {
     Round,
     Squared,

@@ -1,7 +1,7 @@
 use crate::{parser::PrattParser, tree::NodeWrapping};
 use std::fmt::Display;
 
-impl<Wrapper: NodeWrapping> Display for PrattParser<Wrapper> {
+impl<Wrapper: NodeWrapping> Display for PrattParser<'_, Wrapper> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let out = "".to_owned();
         for layer in self.parse_stack.layers.iter() {

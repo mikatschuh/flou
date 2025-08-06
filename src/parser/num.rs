@@ -113,12 +113,12 @@ enum Base {
 /// ```
 /// If instead of a base specifier, a number digit is given, its assumed that the leading zero
 /// was just a typo. The number will be continued regulary.
-pub fn value_to_node<Wrapper: NodeWrapping>(
-    string: String,
-    pos: Position,
+pub fn value_to_node<'a, Wrapper: NodeWrapping>(
+    name: &'a str,
+    pos: Span,
     tree: &mut Tree<Wrapper>,
 ) -> Wrapper {
-    let mut str = &string[..];
+    let mut str = &name[..];
     let is_imaginary = if let Some('i') = last_char_utf8(str) {
         str = &str[0..str.len() - 1]; // cut out the last char
         true
@@ -185,9 +185,9 @@ pub fn value_to_node<Wrapper: NodeWrapping>(
                 .with_type(suffix),
         },
         Err(Some(comment)) => Wrapper::new(pos)
-            .with_node(Node::Id(string))
+            .with_node(Node::Id(name.to_owned()))
             .add_note(comment),
-        Err(None) => Wrapper::new(pos).with_node(Node::Id(string)),
+        Err(None) => Wrapper::new(pos).with_node(Node::Id(name.to_owned())),
     }
 }
 fn parse_integer(
@@ -354,7 +354,7 @@ fn last_char_utf8(s: &str) -> Option<char> {
 #[test]
 fn test_number_parsing() {
     let mut node_buffer = Tree::<NodeWrapper>::new();
-    let pos = Position::new(Box::leak(PathBuf::from("./example").into_boxed_path()));
+    let pos = Span::beginning();
     let tests = [(
         "1",
         NodeWrapper::new(pos)
@@ -393,7 +393,7 @@ fn test_number_parsing() {
             .with_type(Number(NativNumber::Unsigned(None))),
     )];
     for test in tests {
-        let node = value_to_node(format!("{}", test.0), pos, &mut node_buffer);
+        let node = value_to_node(test.0.into(), pos, &mut node_buffer);
         assert_eq!(node, test.1);
     }
 }

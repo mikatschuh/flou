@@ -1,7 +1,7 @@
 use crate::{
     comp,
     parser::PrattParser,
-    tree::{Node, NodeId, NodeWrapping, NonNullNodeId},
+    tree::{Node, NodeId, NodeWrapping},
 };
 #[macro_export]
 macro_rules! unpack {
@@ -53,7 +53,7 @@ pub trait TreeNavi<Wrapper: NodeWrapping> {
     fn move_down(&mut self, new: NodeId);
 }
 // Controlling the parsers pointer stack
-impl<Wrapper: NodeWrapping> TreeNavi<Wrapper> for PrattParser<Wrapper> {
+impl<Wrapper: NodeWrapping> TreeNavi<Wrapper> for PrattParser<'_, Wrapper> {
     #[inline]
     fn current(&self) -> NodeId {
         *self.parse_stack.layers.last()
