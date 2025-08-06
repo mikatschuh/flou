@@ -10,7 +10,7 @@ pub enum ChainedOp {
 use std::fmt;
 use ChainedOp::*;
 
-use crate::parser::tokenizing::binary_op::BindingPow;
+use crate::parser::binary_op::BindingPow;
 impl fmt::Display for ChainedOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let string = match self {

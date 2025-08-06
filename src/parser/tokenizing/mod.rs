@@ -1,8 +1,4 @@
-pub mod binary_op;
-pub mod chained_op;
-pub mod keyword;
 pub mod token;
-pub mod unary_op;
 
 use arrayvec::ArrayVec;
 use std::str::CharIndices;
@@ -15,40 +11,43 @@ use crate::{
 };
 #[derive(Debug, Clone)]
 pub struct Tokenizer<'src> {
-    span: Span,
-    section: Section,
+    span: Span, // maybe change to more efficient format
     pos_state: PositionState,
-    op: TokenKind,
+
+    state: State,
+
     text: &'src str,
     chars: CharIndices<'src>,
-    /// The front is where new tokens are added
-    buffer: ArrayVec<Token<'src>, 3>,
+
+    start_i: usize,
+    last_i: usize,
+    i: usize,
+
+    buffer: ArrayVec<Token<'src>, 2>,
+
     errors: Rc<Errors<'src>>,
 }
+
 #[derive(Clone, Copy, Debug)]
-struct Section {
-    start: usize,
-    end: usize,
+enum State {
+    Op(TokenKind),
+    Id,
+    Nothing,
 }
-impl Section {
-    fn beginning() -> Self {
-        Self { start: 0, end: 0 }
-    }
-    fn get(self, text: &str) -> &str {
-        &text[self.start..=self.end]
-    }
-}
+
 #[derive(Clone, PartialEq, Debug)]
 pub struct EscapeSequenceConfusion {
     pos: Span,
     sequence: String,
 }
+
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum PositionState {
     SOF,
     JustAfterNewLine,
     WithinLine,
 }
+
 impl PositionState {
     fn step(&mut self, pos: &mut Position, c: char) {
         use PositionState::*;
@@ -76,15 +75,23 @@ impl<'src> Tokenizer<'src> {
     pub fn new(text: &'src str, errors: Rc<Errors<'src>>) -> Self {
         Tokenizer {
             span: Span::beginning(),
-            section: Section::beginning(),
             pos_state: PositionState::SOF,
-            op: TokenKind::Empty,
-            chars: text.char_indices(),
+
+            state: State::Nothing,
+
             text: text.into(),
+            chars: text.char_indices(),
+
+            start_i: 0,
+            last_i: 0,
+            i: 0,
+
             buffer: ArrayVec::new(),
+
             errors,
         }
     }
+
     pub fn peek(&mut self) -> Option<&Token<'src>> {
         if self.buffer.is_empty() {
             self.restock_tokens();
@@ -99,66 +106,67 @@ impl<'src> Tokenizer<'src> {
             return None;
         };
         self.pos_state.step(self.span.end_mut(), c);
-        self.section.end = i;
+        self.last_i = self.i;
+        self.i = i;
         Some(c)
     }
+
     #[inline]
-    fn submit_op(&mut self) {
-        self.buffer.push(Token {
-            span: self.span,
-            src: self.section.get(self.text),
-            kind: self.op,
-        });
+    fn set_op(&mut self, op: TokenKind) {
+        self.span.start = self.span.end;
+        self.start_i = self.i;
+        self.state = State::Op(op)
     }
+    #[inline]
+    fn set_id(&mut self) {
+        self.span.start = self.span.end;
+        self.start_i = self.i;
+        self.state = State::Id
+    }
+
     fn restock_tokens(&mut self) {
         while let Some(c) = self.next_char() {
             if c.is_whitespace() {
                 self.submit_current(
                     self.span - 1, // to ignore the whitespace
-                    Section {
-                        start: self.section.start,
-                        end: self.section.end - c.len_utf8(), // to ignore the whitespace
-                    },
+                    self.last_i,
                 );
-                continue;
+            } else {
+                if c == '"' {
+                    let span = self.span - 1; // ignore the quotation mark
+                    let last_i = self.last_i;
+                    self.quote(self.i); // the tokens need to be submitted in the opposite order for the buffer to function correctly
+                    self.submit_current(span, last_i);
+                    return;
+                }
+                if let State::Op(ref mut token) = self.state {
+                    if *token == TokenKind::Slash && c == '/' {
+                        self.comment(self.last_i);
+
+                        self.state = State::Nothing;
+                        continue;
+                    } else if let Some(new_token) = token.add(c) {
+                        *token = new_token;
+                        continue;
+                    } else {
+                        self.submit_current(self.span - 1, self.last_i);
+                    }
+                }
+                if let Some(new_token) = TokenKind::new(c) {
+                    self.submit_current(self.span - 1, self.last_i); // incase the previous one was an identifier
+                    self.set_op(new_token);
+                } else if let State::Nothing = self.state {
+                    self.set_id();
+                }
             }
-            if c == '"' {
-                // the tokens need to be submitted in the opposite order
-                // for the buffer to function correctly
-                let span = self.span;
-                let section = self.section;
-                self.span.start = self.span.end;
-                self.quote();
-                self.submit_current(span, section);
+            if !self.buffer.is_empty() {
                 return;
             }
-            if !matches!(self.op, TokenKind::Empty) {
-                if self.op == TokenKind::Slash && c == '/' {
-                    self.op = TokenKind::Empty;
-
-                    self.span.start = self.span.end - c.len_utf8(); // ignore slash
-                    self.section.start = self.section.end - c.len_utf8();
-
-                    self.comment();
-                    continue;
-                }
-                if let Some(new_op) = self.op.add(c) {
-                    self.op = new_op;
-                    continue;
-                } else {
-                    self.submit_op();
-                    self.op = TokenKind::Empty;
-                    self.section.start = self.section.end; // if the next thing was an identifier
-                }
-            }
-            if let Some(new_op) = TokenKind::Empty.add(c) {
-                self.op = new_op;
-                self.section.start = self.section.end;
-            }
         }
-        self.submit_current(self.span, self.section);
+        self.submit_current(self.span, self.i);
     }
-    fn comment(&mut self) {
+
+    fn comment(&mut self, _: usize) {
         while let Some(c) = self.next_char() {
             match c {
                 '\n' => {
@@ -168,13 +176,15 @@ impl<'src> Tokenizer<'src> {
             }
         }
     }
-    fn quote(&mut self) {
+
+    fn quote(&mut self, start_i: usize) {
+        self.span.start = self.span.end;
         while let Some(c) = self.next_char() {
             match c {
                 '"' => {
                     self.buffer.push(Token {
                         span: self.span,
-                        src: self.section.get(self.text),
+                        src: &self.text[start_i..=self.i],
                         kind: TokenKind::Quote,
                     });
                     return;
@@ -185,29 +195,31 @@ impl<'src> Tokenizer<'src> {
         self.errors.push(
             self.span,
             ErrorCode::MissingClosingQuotes {
-                quote: self.section.get(self.text),
+                quote: &self.text[start_i..=self.i],
             },
         );
         self.buffer.push(Token {
             span: self.span,
-            src: self.section.get(self.text),
+            src: &self.text[start_i..=self.i],
             kind: TokenKind::Quote,
         })
     }
-    fn submit_current(&mut self, span: Span, section: Section) {
-        if !matches!(self.op, TokenKind::Empty) {
-            self.buffer.push(Token {
+
+    fn submit_current(&mut self, span: Span, end_i: usize) {
+        match self.state {
+            State::Op(token) => self.buffer.push(Token {
                 span,
-                src: section.get(self.text),
-                kind: self.op,
-            })
-        } else {
-            self.buffer.push(Token {
+                src: &self.text[self.start_i..=end_i],
+                kind: token,
+            }),
+            State::Id => self.buffer.push(Token {
                 span,
-                src: section.get(self.text),
+                src: &self.text[self.start_i..=end_i],
                 kind: TokenKind::Ident,
-            })
+            }),
+            State::Nothing => return, // skips the self.state = State::Nothing
         }
+        self.state = State::Nothing
     }
 }
 
@@ -226,6 +238,7 @@ pub fn with_written_out_escape_sequences(string: &str) -> String {
     }
     output_string
 }
+
 pub fn resolve_escape_sequences(quote: &str) -> (String, Vec<EscapeSequenceConfusion>) {
     #[derive(PartialEq)]
     enum ParsingEscapeSequence {
@@ -286,21 +299,22 @@ pub fn resolve_escape_sequences(quote: &str) -> (String, Vec<EscapeSequenceConfu
     output_string.pop();
     (output_string, confusions)
 }
+
 #[test]
 fn text() {
     use std::path::Path;
     use TokenKind::*;
     let errors = Rc::new(Errors::empty(Path::new("example.flou")));
-    assert!(
+    assert_eq!(
         Tokenizer::new("+++*===!>|", errors.clone())
             .into_iter()
-            .collect::<Vec<_>>()
-            == vec![
-                Token::new(Span::at(1, 1, 2, 1), "++", PlusPlus),
-                Token::new(Span::at(3, 1, 3, 1), "+", Plus),
-                Token::new(Span::at(4, 1, 5, 1), "*=", StarEqual),
-                Token::new(Span::at(6, 1, 7, 1), "==", EqualEqual),
-                Token::new(Span::at(8, 1, 11, 1), "!>|", NotRightPipe)
-            ]
+            .collect::<Vec<_>>(),
+        vec![
+            Token::new(Span::at(1, 1, 2, 1), "++", PlusPlus),
+            Token::new(Span::at(3, 1, 3, 1), "+", Plus),
+            Token::new(Span::at(4, 1, 5, 1), "*=", StarEqual),
+            Token::new(Span::at(6, 1, 7, 1), "==", EqualEqual),
+            Token::new(Span::at(8, 1, 10, 1), "!>|", NotRightPipe)
+        ]
     )
 }

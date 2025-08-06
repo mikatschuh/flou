@@ -3,23 +3,6 @@ use crate::{
     parser::PrattParser,
     tree::{Node, NodeId, NodeWrapping},
 };
-#[macro_export]
-macro_rules! unpack {
-    ($pat:pat = $expr:expr => $body:expr) => {
-        if let $pat = $expr {
-            $body
-        } else {
-            unreachable!()
-        }
-    };
-    ($expr:expr => $pat:pat => $body:expr) => {
-        if let $pat = $expr {
-            $body
-        } else {
-            unreachable!()
-        }
-    };
-}
 
 pub struct ParseStack {
     pub layers: comp::Vec<NodeId, 1>,

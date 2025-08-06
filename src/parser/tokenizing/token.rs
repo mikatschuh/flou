@@ -13,8 +13,6 @@ pub struct Token<'src> {
 
 #[derive(PartialEq, Debug, Clone, Copy, Eq)]
 pub enum TokenKind {
-    Empty,
-
     Not,        // !
     Tick,       // '
     Equal,      // =
@@ -99,8 +97,6 @@ impl Display for Token<'_> {
             f,
             "{}",
             match self.kind {
-                Empty => "",
-
                 Not => "!",
                 Tick => "'",
                 Equal => "=",
@@ -191,34 +187,36 @@ impl<'a> Token<'a> {
     }
 }
 impl TokenKind {
+    pub fn new(c: char) -> Option<TokenKind> {
+        match c {
+            '!' => Some(Not),
+            '\'' => Some(Tick),
+            '=' => Some(Equal),
+            '+' => Some(Plus),
+            '-' => Some(Minus),
+            '*' => Some(Star),
+            '/' => Some(Slash),
+            '%' => Some(Percent),
+            '·' => Some(Dot),
+            '^' => Some(Up),
+            '|' => Some(Pipe),
+            '&' => Some(And),
+            '<' => Some(Left),
+            '>' => Some(Right),
+            ':' => Some(Colon),
+            ',' => Some(Comma),
+            '(' => Some(OpenParen),
+            '[' => Some(OpenBracket),
+            '{' => Some(OpenBrace),
+            ')' => Some(ClosedParen),
+            ']' => Some(ClosedBracket),
+            '}' => Some(ClosedBrace),
+            _ => None,
+        }
+    }
     pub fn add(self, c: char) -> Option<TokenKind> {
         // transformation table to make tokens out of their char components
         match self {
-            Empty => match c {
-                '!' => Some(Not),
-                '\'' => Some(Tick),
-                '=' => Some(Equal),
-                '+' => Some(Plus),
-                '-' => Some(Minus),
-                '*' => Some(Star),
-                '/' => Some(Slash),
-                '%' => Some(Percent),
-                '·' => Some(Dot),
-                '^' => Some(Up),
-                '|' => Some(Pipe),
-                '&' => Some(And),
-                '<' => Some(Left),
-                '>' => Some(Right),
-                ':' => Some(Colon),
-                ',' => Some(Comma),
-                '(' => Some(OpenParen),
-                '[' => Some(OpenBracket),
-                '{' => Some(OpenBrace),
-                ')' => Some(ClosedParen),
-                ']' => Some(ClosedBracket),
-                '}' => Some(ClosedBrace),
-                _ => None,
-            },
             Not => match c {
                 '=' => Some(NotEqual),
                 '|' => Some(NotPipe),
@@ -308,10 +306,12 @@ impl TokenKind {
             Right => match c {
                 '=' => Some(RightEqual),
                 '|' => Some(RightPipe),
+                '<' => Some(Cross),
                 _ => None,
             },
             NotRight => match c {
                 '=' => Some(NotRightEqual),
+                '|' => Some(NotRightPipe),
                 _ => None,
             },
             Colon => match c {

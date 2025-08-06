@@ -3,9 +3,11 @@ use num::BigUint;
 use crate::{
     comp,
     error::Span,
-    parser::tokenizing::{
-        binary_op::BinaryOp, chained_op::ChainedOp, unary_op::UnaryOp,
-        with_written_out_escape_sequences, EscapeSequenceConfusion,
+    parser::{
+        binary_op::BinaryOp,
+        chained_op::ChainedOp,
+        tokenizing::{with_written_out_escape_sequences, EscapeSequenceConfusion},
+        unary_op::UnaryOp,
     },
     typing::Type,
 };

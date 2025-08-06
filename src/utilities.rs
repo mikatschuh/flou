@@ -74,6 +74,7 @@ impl<T, A: CustomAllocator> Rc<T, A> {
         Self { ptr, allocator }
     }
     // Aktuelle Anzahl der starken Referenzen
+    #[allow(dead_code)]
     pub fn strong_count(&self) -> usize {
         unsafe { (*self.ptr.as_ptr()).strong.load(Ordering::SeqCst) }
     }

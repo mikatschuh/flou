@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::parser::tokenizing::binary_op::BindingPow;
+use crate::parser::binary_op::BindingPow;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum UnaryOp {

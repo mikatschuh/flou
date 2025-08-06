@@ -9,7 +9,7 @@ use crate::tree::Bracket;
 use crate::{
     error::*,
     format_error_quote_arg,
-    parser::tokenizing::binary_op::BinaryOp,
+    parser::binary_op::BinaryOp,
     tree::{Node, NodeId, NodeWrapper, NodeWrapping, Note, Tree},
     typing::{NativNumber, Type},
 };

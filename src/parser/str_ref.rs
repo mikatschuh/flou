@@ -1,14 +1,17 @@
-use std::{ collections::HashMap};
+use std::{collections::HashMap, marker::PhantomData};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Symbol(usize);
-
-pub struct NameSpace {
-    map: HashMap<String, Symbol>,
-    vec: Vec<String>, // Optional: zum Zurückübersetzen
+pub struct Symbol<'src> {
+    _marker: PhantomData<&'src ()>,
+    pub index: usize,
 }
 
-impl NameSpace {
+pub struct Internalizer<'src> {
+    map: HashMap<&'src str, Symbol<'src>>,
+    vec: Vec<&'src str>, // Optional: zum Zurückübersetzen
+}
+
+impl<'src> Internalizer<'src> {
     pub fn new() -> Self {
         Self {
             map: HashMap::new(),
@@ -16,24 +19,24 @@ impl NameSpace {
         }
     }
 
-    pub fn intern(&mut self, name: &str) -> Symbol {
+    pub fn get(&mut self, name: &'src str) -> Symbol<'src> {
         if let Some(&sym) = self.map.get(name) {
             return sym;
         }
-        let id = Symbol(self.vec.len());
-        self.vec.push(name.to_owned());
-        self.map.insert(name.to_owned(), id);
+        let id = Symbol {
+            _marker: PhantomData::default(),
+            index: self.vec.len(),
+        };
+        self.vec.push(name);
+        self.map.insert(name, id);
         id
     }
 
-    pub fn get(&self, name: &String) -> Option<Symbol> {
-        self.map.get(name).copied()
-    }
-    pub fn contains(&self, name: &String) -> bool {
+    pub fn contains(&self, name: &&str) -> bool {
         self.map.contains_key(name)
     }
 
     pub fn resolve(&self, sym: Symbol) -> &str {
-        &self.vec[sym.0]
+        &self.vec[sym.index]
     }
 }
