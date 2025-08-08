@@ -1,9 +1,9 @@
 use std::{collections::HashMap, marker::PhantomData};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Symbol<'src> {
-    _marker: PhantomData<&'src ()>,
-    pub index: usize,
+pub struct Symbol<'internalizer> {
+    _marker: PhantomData<&'internalizer ()>,
+    idx: usize,
 }
 
 pub struct Internalizer<'src> {
@@ -25,7 +25,7 @@ impl<'src> Internalizer<'src> {
         }
         let id = Symbol {
             _marker: PhantomData::default(),
-            index: self.vec.len(),
+            idx: self.vec.len(),
         };
         self.vec.push(name);
         self.map.insert(name, id);
@@ -37,6 +37,6 @@ impl<'src> Internalizer<'src> {
     }
 
     pub fn resolve(&self, sym: Symbol) -> &str {
-        &self.vec[sym.index]
+        &self.vec[sym.idx]
     }
 }

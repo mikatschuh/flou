@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use colored::{ColoredString, Colorize};
 
-use crate::error::Span;
+use crate::{error::Span, parser::unary_op::UnaryOp};
 
 #[derive(PartialEq, Debug, Clone, Eq)]
 pub struct Token<'src> {
@@ -410,6 +410,17 @@ impl TokenKind {
             ']' => self == ClosedBracket,
             '}' => self == ClosedBrace,
             _ => false,
+        }
+    }
+    pub fn as_prefix(self) -> Option<UnaryOp> {
+        use UnaryOp::*;
+        match self {
+            Self::Not => Some(Not),
+            Tick => Some(LfT),
+            RightArrow => Some(Ref),
+            Minus => Some(Neg),
+            Star => Some(Deref),
+            _ => None,
         }
     }
 }

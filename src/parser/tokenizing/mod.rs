@@ -1,7 +1,7 @@
 pub mod test;
 pub mod token;
 
-use std::str::CharIndices;
+use std::{iter::FusedIterator, str::CharIndices};
 use token::Token;
 
 use crate::{
@@ -9,6 +9,10 @@ use crate::{
     parser::tokenizing::token::TokenKind,
     utilities::{ArrayQueue, Rc},
 };
+
+const BUFFER_SIZE: usize = 2;
+const BUFFER_LOG_2: usize = 1;
+
 #[derive(Debug, Clone)]
 pub struct Tokenizer<'src> {
     span: Span, // maybe change to more efficient format
@@ -23,7 +27,7 @@ pub struct Tokenizer<'src> {
     i: usize,
     next_i: usize,
 
-    buffer: ArrayQueue<Token<'src>, 2, 1>,
+    buffer: ArrayQueue<Token<'src>, BUFFER_SIZE, BUFFER_LOG_2>,
 
     errors: Rc<Errors<'src>>,
 }
@@ -71,6 +75,8 @@ impl<'src> Iterator for Tokenizer<'src> {
         self.buffer.pop()
     }
 }
+impl<'src> FusedIterator for Tokenizer<'src> {}
+
 impl<'src> Tokenizer<'src> {
     pub fn new(text: &'src str, errors: Rc<Errors<'src>>) -> Self {
         Tokenizer {
@@ -159,7 +165,7 @@ impl<'src> Tokenizer<'src> {
                     self.set_id();
                 }
             }
-            if !self.buffer.is_empty() {
+            if self.buffer.len() > BUFFER_SIZE - 2 {
                 return;
             }
         }

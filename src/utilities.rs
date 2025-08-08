@@ -248,6 +248,10 @@ impl<T, const CAP: usize, const CAP_LOG_2: usize> ArrayQueue<T, CAP, CAP_LOG_2> 
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
 }
 impl<T, const CAP: usize, const CAP_LOG_2: usize> Index<usize> for ArrayQueue<T, CAP, CAP_LOG_2> {
     type Output = T;

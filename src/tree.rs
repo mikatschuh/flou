@@ -6,6 +6,7 @@ use crate::{
     parser::{
         binary_op::BinaryOp,
         chained_op::ChainedOp,
+        intern::{Internalizer, Symbol},
         tokenizing::{with_written_out_escape_sequences, EscapeSequenceConfusion},
         unary_op::UnaryOp,
     },
@@ -14,53 +15,45 @@ use crate::{
 // use colored::Colorize;
 use std::{
     fmt::{Debug, Display},
+    marker::PhantomData,
     ops::{Index, IndexMut},
     vec,
 };
 
-pub trait NodeWrapping: Clone + Debug {
-    fn new(pos: Span) -> Self;
+pub trait NodeWrapping<'src>: Clone + Debug {
+    fn new(span: Span, node: Node<'src>) -> Self;
     fn add_note(self, comment: Note) -> Self;
     fn add_notes(self, comments: Vec<Note>) -> Self;
-    fn with_node(self, node: Node) -> Self;
-    fn with_type(self, typed: Type) -> Self;
-    fn node_mut(&mut self) -> &mut Option<Node>;
-    fn node(&self) -> Option<&Node>;
+    fn with_type(self, typed: Type<'src>) -> Self;
+    fn node_mut(&mut self) -> &mut Node<'src>;
+    fn node(&self) -> &Node<'src>;
     fn typed(&self) -> Option<Type>;
-    fn pos(&self) -> Span;
-    fn pos_mut(&mut self) -> &mut Span;
+    fn span(&self) -> Span;
+    fn span_mut(&mut self) -> &mut Span;
 
-    fn display(&self, tree: &Tree<Self>, indentation: String) -> String;
+    fn display(
+        &self,
+        tree: &Tree<'src, Self>,
+        internalizer: &Internalizer<'src>,
+        indentation: String,
+    ) -> String;
 }
 
-#[derive(Debug, Clone)]
-pub struct NonNullNodeWrapper {
-    node: Node,
-    pos: Span,
-}
-trait Unwrapable: Clone + Debug {
-    fn unwrap(&self) -> &Node;
-}
-impl Unwrapable for NonNullNodeWrapper {
-    fn unwrap(&self) -> &Node {
-        &self.node
-    }
-}
 const DISPLAY_INDENTATION: &str = "|   ";
 const DISPLAY_INDENTATION_NEG_1: &str = "   ";
 #[derive(Debug, Clone, PartialEq)]
-pub struct NodeWrapper {
-    pos: Span,
-    node: Option<Node>,
-    typed: Option<Type>,
+pub struct NodeWrapper<'src> {
+    span: Span,
+    node: Node<'src>,
+    typed: Option<Type<'src>>,
     notes: Vec<Note>,
 }
 
-impl NodeWrapping for NodeWrapper {
-    fn new(pos: Span) -> Self {
+impl<'src> NodeWrapping<'src> for NodeWrapper<'src> {
+    fn new(span: Span, node: Node<'src>) -> Self {
         Self {
-            pos,
-            node: None,
+            span: span,
+            node,
             notes: vec![],
             typed: None,
         }
@@ -75,63 +68,63 @@ impl NodeWrapping for NodeWrapper {
         self
     }
     #[inline]
-    fn with_node(mut self, node: Node) -> Self {
-        self.node = Some(node);
-        self
-    }
-    #[inline]
-    fn with_type(mut self, typed: Type) -> Self {
+    fn with_type(mut self, typed: Type<'src>) -> Self {
         self.typed = Some(typed);
         self
     }
     #[inline]
-    fn node_mut(&mut self) -> &mut Option<Node> {
+    fn node_mut(&mut self) -> &mut Node<'src> {
         &mut self.node
     }
     #[inline]
-    fn node(&self) -> Option<&Node> {
-        self.node.as_ref()
+    fn node(&self) -> &Node<'src> {
+        &self.node
     }
     #[inline]
     fn typed(&self) -> Option<Type> {
         self.typed
     }
     #[inline]
-    fn pos(&self) -> Span {
-        self.pos
+    fn span(&self) -> Span {
+        self.span
     }
     #[inline]
-    fn pos_mut(&mut self) -> &mut Span {
-        &mut self.pos
+    fn span_mut(&mut self) -> &mut Span {
+        &mut self.span
     }
-    fn display(&self, tree: &Tree<Self>, indentation: String) -> String {
-        let Some(node) = self.node() else {
-            return format!("None");
-        };
+    fn display(
+        &self,
+        tree: &Tree<'src, Self>,
+        internalizer: &Internalizer,
+        indentation: String,
+    ) -> String {
         let next_indentation = indentation.clone() + DISPLAY_INDENTATION;
         use Node::*;
         format!(
             "{}",
-            match node {
+            match &self.node {
                 Literal {
                     val,
                     imaginary_coefficient,
                 } => format!("{val} {}", if *imaginary_coefficient { "i" } else { "()" }),
-                Id(id) => format!("Id  {}", id),
+                Ident(id) => format!("Id  {}", internalizer.resolve(*id)),
                 Quote(quote) => format!("Quote  \"{}\"", with_written_out_escape_sequences(&quote)),
                 BinaryOp { op, left, right } => format!(
                     "{op} {{\n{}{}\n{}{} \n{}}}",
                     next_indentation.clone(),
                     left.get_wrapper(tree)
-                        .display(tree, next_indentation.clone()),
+                        .display(tree, internalizer, next_indentation.clone()),
                     next_indentation.clone(),
-                    right.get_wrapper(tree).display(tree, next_indentation),
+                    right
+                        .get_wrapper(tree)
+                        .display(tree, internalizer, next_indentation),
                     indentation
                 ),
                 UnaryOp { op, operand } => format!(
                     "{op} {}",
                     operand.get_wrapper(tree).display(
                         tree,
+                        internalizer,
                         indentation
                             + &op
                                 .to_string()
@@ -146,7 +139,9 @@ impl NodeWrapping for NodeWrapper {
                 } => format!(
                     "({}{}{})",
                     DISPLAY_INDENTATION_NEG_1,
-                    content.get_wrapper(tree).display(tree, next_indentation),
+                    content
+                        .get_wrapper(tree)
+                        .display(tree, internalizer, next_indentation),
                     DISPLAY_INDENTATION_NEG_1,
                 ),
                 Brackets {
@@ -155,7 +150,9 @@ impl NodeWrapping for NodeWrapper {
                 } => format!(
                     "[{}{}{}]",
                     DISPLAY_INDENTATION_NEG_1,
-                    content.get_wrapper(tree).display(tree, next_indentation),
+                    content
+                        .get_wrapper(tree)
+                        .display(tree, internalizer, next_indentation),
                     DISPLAY_INDENTATION_NEG_1,
                 ),
                 Brackets {
@@ -164,7 +161,9 @@ impl NodeWrapping for NodeWrapper {
                 } => format!(
                     "{{{}{}{}}}",
                     DISPLAY_INDENTATION_NEG_1,
-                    content.get_wrapper(tree).display(tree, next_indentation),
+                    content
+                        .get_wrapper(tree)
+                        .display(tree, internalizer, next_indentation),
                     DISPLAY_INDENTATION_NEG_1
                 ),
                 List(list) =>
@@ -175,8 +174,11 @@ impl NodeWrapping for NodeWrapper {
                                 .map(|item| {
                                     format!(
                                         "{}",
-                                        item.get_wrapper(tree)
-                                            .display(tree, next_indentation.clone())
+                                        item.get_wrapper(tree).display(
+                                            tree,
+                                            internalizer,
+                                            next_indentation.clone()
+                                        )
                                     )
                                 })
                                 .collect::<String>()
@@ -189,8 +191,11 @@ impl NodeWrapping for NodeWrapper {
                                     format!(
                                         "{}{},\n",
                                         next_indentation.clone(),
-                                        item.get_wrapper(tree)
-                                            .display(tree, next_indentation.clone())
+                                        item.get_wrapper(tree).display(
+                                            tree,
+                                            internalizer,
+                                            next_indentation.clone()
+                                        )
                                     )
                                 })
                                 .collect::<String>(),
@@ -201,24 +206,30 @@ impl NodeWrapping for NodeWrapper {
                     if content.len() == 1 {
                         format!(
                             "{}",
-                            content[0]
-                                .get_wrapper(tree)
-                                .display(tree, next_indentation.clone())
+                            content[0].get_wrapper(tree).display(
+                                tree,
+                                internalizer,
+                                next_indentation.clone()
+                            )
                         )
                     } else {
                         let mut list = content.iter();
                         format!(
                             "{}{}",
-                            list.next()
-                                .unwrap()
-                                .get_wrapper(tree)
-                                .display(tree, indentation.clone() + "  "),
+                            list.next().unwrap().get_wrapper(tree).display(
+                                tree,
+                                internalizer,
+                                indentation.clone() + "  "
+                            ),
                             list.map(|item| {
                                 format!(
                                     "\n{}: {}",
                                     indentation.clone(),
-                                    item.get_wrapper(tree)
-                                        .display(tree, indentation.clone() + "  ")
+                                    item.get_wrapper(tree).display(
+                                        tree,
+                                        internalizer,
+                                        indentation.clone() + "  "
+                                    )
                                 )
                             })
                             .collect::<String>(),
@@ -228,9 +239,11 @@ impl NodeWrapping for NodeWrapper {
                     if content.len() == 1 {
                         format!(
                             "{}",
-                            content[0]
-                                .get_wrapper(tree)
-                                .display(tree, next_indentation.clone())
+                            content[0].get_wrapper(tree).display(
+                                tree,
+                                internalizer,
+                                next_indentation.clone()
+                            )
                         )
                     } else {
                         let mut string = String::new();
@@ -244,7 +257,11 @@ impl NodeWrapping for NodeWrapper {
                                     string += &format!(
                                         "\n{}{}",
                                         next_indentation,
-                                        &node.display(&tree, next_indentation.clone())
+                                        &node.display(
+                                            &tree,
+                                            internalizer,
+                                            next_indentation.clone()
+                                        )
                                     )
                                 });
                         }
@@ -252,9 +269,11 @@ impl NodeWrapping for NodeWrapper {
                     },
                 ChainedOp { first, additions } => format!(
                     "Chained  {}{}",
-                    first
-                        .get_wrapper(tree)
-                        .display(tree, indentation.clone() + "   "),
+                    first.get_wrapper(tree).display(
+                        tree,
+                        internalizer,
+                        indentation.clone() + "   "
+                    ),
                     additions
                         .iter()
                         .map(|item| {
@@ -265,9 +284,11 @@ impl NodeWrapping for NodeWrapper {
                                 (0..3 - item.0.to_string().chars().count())
                                     .map(|_| " ")
                                     .collect::<String>(),
-                                item.1
-                                    .get_wrapper(tree)
-                                    .display(tree, indentation.clone() + "   ")
+                                item.1.get_wrapper(tree).display(
+                                    tree,
+                                    internalizer,
+                                    indentation.clone() + "   "
+                                )
                             )
                         })
                         .collect::<String>(),
@@ -277,25 +298,30 @@ impl NodeWrapping for NodeWrapper {
         )
     }
 }
-use crate::parser::num::NumberParsingNote;
 #[derive(Debug, Clone, PartialEq)]
 pub enum Note {
-    NumberParsingNote(NumberParsingNote),
     EscapeSequenceConfusion(EscapeSequenceConfusion),
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Path {
-    pub content: NodeId,
+pub struct Path<'src> {
+    pub content: NodeId<'src>,
 }
-impl Path {
-    pub fn new(content: NodeId) -> Self {
+impl<'src> Path<'src> {
+    pub fn new(content: NodeId<'src>) -> Self {
         Self { content }
     }
-    pub fn display(&self, tree: &Tree<impl NodeWrapping>, indentation: String) -> String {
+    pub fn display<'tree>(
+        &self,
+        tree: &'src Tree<'src, impl NodeWrapping<'src>>,
+        internalizer: &Internalizer<'src>,
+        indentation: String,
+    ) -> String {
         format!(
             "{}",
-            self.content.get_wrapper(tree).display(tree, indentation)
+            self.content
+                .get_wrapper(tree)
+                .display(tree, internalizer, indentation)
         )
     }
 }
@@ -322,13 +348,13 @@ impl Bracket {
     }
 }
 #[derive(Debug, Clone, PartialEq)]
-pub enum Node {
+pub enum Node<'src> {
     // control flow structures
     Conditional {
-        condition: NodeId,
+        condition: NodeId<'src>,
         looping: bool,
-        then_body: Path,
-        else_body: Option<Path>,
+        then_body: Path<'src>,
+        else_body: Option<Path<'src>>,
     }, // if/loop condition then_body (else else_body)
     // single values
     Literal {
@@ -338,31 +364,31 @@ pub enum Node {
     Quote(String), // "..."
 
     // identifiers
-    Id(String),          // x
-    PrimitiveType(Type), // u32, i32, c32, f32, ...
+    Ident(Symbol<'src>),       // x
+    PrimitiveType(Type<'src>), // u32, i32, c32, f32, ...
 
     // multiple values
-    List(comp::Vec<NodeId, 2>),        // a, b, c, d, ...
-    ColonStruct(comp::Vec<NodeId, 2>), // a : b : c : d
-    Statements(comp::Vec<NodeId, 2>),
+    List(comp::Vec<NodeId<'src>, 2>),        // a, b, c, d, ...
+    ColonStruct(comp::Vec<NodeId<'src>, 2>), // a : b : c : d
+    Statements(comp::Vec<NodeId<'src>, 2>),
 
     // operations
     BinaryOp {
         op: BinaryOp,
-        left: NodeId,
-        right: NodeId,
+        left: NodeId<'src>,
+        right: NodeId<'src>,
     }, // left op right
     ChainedOp {
-        first: NodeId,
-        additions: comp::Vec<(ChainedOp, NodeId), 1>,
+        first: NodeId<'src>,
+        additions: comp::Vec<(ChainedOp, NodeId<'src>), 1>,
     }, // first op additions[0].0 additions[0].1
     UnaryOp {
         op: UnaryOp,
-        operand: NodeId,
+        operand: NodeId<'src>,
     }, // op operand
     Brackets {
         kind: Bracket,
-        content: NodeId,
+        content: NodeId<'src>,
     }, // squared content squared
 }
 /*
@@ -445,116 +471,94 @@ pub fn to_rust_code<W: Clone + Debug + Unwrapable>(v: &Vec<W>, indentation: Stri
     )
 }*/
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct NodeId(usize);
+pub struct NodeId<'tree> {
+    _marker: PhantomData<&'tree ()>,
+    idx: usize,
+}
 
-impl NodeId {
+impl<'tree> NodeId<'tree> {
     #[inline]
-    pub fn get(self, tree: &Tree<impl NodeWrapping>) -> Option<&Node> {
+    fn new(idx: usize) -> Self {
+        Self {
+            _marker: PhantomData::default(),
+            idx,
+        }
+    }
+    #[inline]
+    pub fn get(self, tree: &'tree Tree<'tree, impl NodeWrapping<'tree>>) -> &'tree Node<'tree> {
         tree[self].node()
     }
     #[inline]
-    pub fn get_mut(self, tree: &mut Tree<impl NodeWrapping>) -> &mut Option<Node> {
+    pub fn get_mut(
+        self,
+        tree: &'tree mut Tree<'tree, impl NodeWrapping<'tree>>,
+    ) -> &'tree mut Node<'tree> {
         tree[self].node_mut()
     }
     #[inline]
-    pub fn get_wrapper<Wrapper: NodeWrapping>(self, tree: &Tree<Wrapper>) -> &Wrapper {
+    pub fn get_wrapper<'src, Wrapper: NodeWrapping<'src>>(
+        self,
+        tree: &'tree Tree<'src, Wrapper>,
+    ) -> &'tree Wrapper
+    where
+        'tree: 'src,
+    {
         &tree[self]
     }
     #[inline]
-    pub fn get_wrapper_mut<Wrapper: NodeWrapping>(self, tree: &mut Tree<Wrapper>) -> &mut Wrapper {
+    pub fn get_wrapper_mut<Wrapper: NodeWrapping<'tree>>(
+        self,
+        tree: &'tree mut Tree<'tree, Wrapper>,
+    ) -> &'tree mut Wrapper {
         &mut tree[self]
     }
-    #[inline]
-    pub fn is_non_empty(self, tree: &Tree<impl NodeWrapping>) -> bool {
-        matches!(self.get(tree), Some(..))
-    }
-    #[inline]
-    pub fn as_non_null(self, tree: &Tree<impl NodeWrapping>) -> NonNullNodeId {
-        assert!(if let Some(..) = self.get(tree) {
-            true
-        } else {
-            false
-        });
-        NonNullNodeId(self)
-    }
 }
-impl From<NonNullNodeId> for NodeId {
-    #[inline]
-    fn from(value: NonNullNodeId) -> Self {
-        value.0
-    }
-}
-/// A node id with the certainty of having a actual node in place
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct NonNullNodeId(NodeId);
 
-impl NonNullNodeId {
-    #[inline]
-    pub fn get(self, tree: &Tree<impl NodeWrapping>) -> &Node {
-        tree[self.0].node().unwrap()
-    }
-    #[inline]
-    pub fn get_mut(self, tree: &mut Tree<impl NodeWrapping>) -> &mut Node {
-        tree[self.0].node_mut().as_mut().unwrap()
-    }
-    #[inline]
-    pub fn get_wrapper<Wrapper: NodeWrapping>(self, tree: &Tree<Wrapper>) -> &Wrapper {
-        &tree[self.0]
-    }
-    #[inline]
-    pub fn get_wrapper_mut<Wrapper: NodeWrapping>(self, tree: &mut Tree<Wrapper>) -> &mut Wrapper {
-        &mut tree[self.0]
-    }
-}
 #[derive(Clone, Debug)]
-pub struct Tree<W: NodeWrapping> {
+pub struct Tree<'src, W: NodeWrapping<'src>> {
+    _marker: PhantomData<&'src ()>,
+    pub root: NodeId<'src>,
     nodes: Vec<W>,
 }
-impl<Wrapper: NodeWrapping> Index<NodeId> for Tree<Wrapper> {
+impl<'src, Wrapper: NodeWrapping<'src>> Index<NodeId<'src>> for Tree<'src, Wrapper> {
     type Output = Wrapper;
     fn index(&self, index: NodeId) -> &Self::Output {
-        &self.nodes[index.0]
+        &self.nodes[index.idx]
     }
 }
-impl<W: NodeWrapping> IndexMut<NodeId> for Tree<W> {
+impl<'src, W: NodeWrapping<'src>> IndexMut<NodeId<'src>> for Tree<'src, W> {
     fn index_mut(&mut self, index: NodeId) -> &mut Self::Output {
-        &mut self.nodes[index.0]
+        &mut self.nodes[index.idx]
     }
 }
-impl<Wrapper: NodeWrapping> Index<NonNullNodeId> for Tree<Wrapper> {
-    type Output = Wrapper;
-    fn index(&self, index: NonNullNodeId) -> &Self::Output {
-        &self.nodes[index.0 .0]
-    }
-}
-impl<W: NodeWrapping> IndexMut<NonNullNodeId> for Tree<W> {
-    fn index_mut(&mut self, index: NonNullNodeId) -> &mut Self::Output {
-        &mut self.nodes[index.0 .0]
-    }
-}
-impl<Wrapper: NodeWrapping> Tree<Wrapper> {
+impl<'src, W: NodeWrapping<'src>> Tree<'src, W> {
     pub fn new() -> Self {
-        Self { nodes: vec![] }
+        Self {
+            _marker: PhantomData::default(),
+            root: NodeId::new(0),
+            nodes: vec![],
+        }
     }
-    pub fn add(&mut self, node: Wrapper) -> NodeId {
+    pub fn add(&mut self, node: W) -> NodeId {
         self.nodes.push(node);
-        NodeId(self.nodes.len() - 1)
+        NodeId::new(self.nodes.len() - 1)
     }
-    #[inline]
-    pub fn add_root(&mut self, node: Wrapper) -> NodeId {
-        assert!(self.nodes.len() == 0);
-        self.add(node)
+    pub fn add_root(&mut self, node: W) -> NodeId {
+        self.nodes.push(node);
+        NodeId::new(self.nodes.len() - 1)
     }
-    pub fn move_to_new_location(&mut self, node: NodeId) -> NodeId {
+    pub fn move_to_new_location(&mut self, node: NodeId<'src>) -> NodeId {
         self.add(self[node].clone())
-    }
-    pub fn root(&self) -> &Wrapper {
-        &self.nodes[0]
     }
 }
 
-impl<W: NodeWrapping> Display for Tree<W> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.root().display(self, String::new()))
+impl<'src, W: NodeWrapping<'src>> Tree<'src, W> {
+    pub fn to_string(&'src self, internalizer: &Internalizer<'src>) -> String {
+        format!(
+            "{}",
+            self.root
+                .get_wrapper(self)
+                .display(self, internalizer, String::new())
+        )
     }
 }

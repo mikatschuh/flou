@@ -10,8 +10,8 @@ pub enum NativNumber {
     Float(OptSize),
 }
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Type {
+pub enum Type<'tree> {
     Number(NativNumber),
     ComplexNumber(NativNumber),
-    Expr(NodeId),
+    Expr(NodeId<'tree>),
 }

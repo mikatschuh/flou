@@ -58,7 +58,6 @@ The operators with the lowest binding power come first, then it gets higher and 
         a % b    Euclidic Modulo: -10 % 3 = 2; 10 % -3 = -2
 
     13  -a       Negation
-        +a       Double Negation
 
     14  User Defined Operators get defaulted here, for instance:
         · (dot-product),
@@ -78,6 +77,7 @@ The operators with the lowest binding power come first, then it gets higher and 
 18 Prefix Unary Operators:                         | overloadable
     !a          Invertion (bitwise & logical)
     -> a        Referencing
+    *a          Dereferencing
 
 19 Application:
     a(b)        Calling

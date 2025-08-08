@@ -13,23 +13,23 @@ pub struct Errors<'src> {
     errors: Vec<Error<'src>>,
 }
 
-impl<'a> Errors<'a> {
-    pub fn new(path: &'a Path, pos: Span, error: ErrorCode<'a>) -> Self {
+impl<'src> Errors<'src> {
+    pub fn new(path: &'src Path, pos: Span, error: ErrorCode<'src>) -> Self {
         Self {
             file: path,
             errors: vec![Error::new(pos, error)],
         }
     }
-    pub fn empty(path: &'a Path) -> Self {
+    pub fn empty(path: &'src Path) -> Self {
         Self {
             file: path,
             errors: Vec::new(),
         }
     }
-    pub fn push(&mut self, pos: Span, error: ErrorCode<'a>) {
+    pub fn push(&mut self, pos: Span, error: ErrorCode<'src>) {
         self.errors.push(Error::new(pos, error))
     }
-    pub fn concat(&mut self, other: Errors<'a>) {
+    pub fn concat(&mut self, other: Errors<'src>) {
         self.errors.extend(other.errors.iter().cloned());
     }
 }

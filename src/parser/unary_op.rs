@@ -5,11 +5,11 @@ use crate::parser::binary_op::BindingPow;
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum UnaryOp {
     // infront of one argument // unary - prefix - ops
-    Ref, // -> a
-    Not, // !a
+    Ref,   // -> a
+    Deref, // *a
+    Not,   // !a
 
     Neg, // -a
-    Pos, // +a
 
     LfT, // 'a
 
@@ -17,36 +17,16 @@ pub enum UnaryOp {
     Increment, // a++
     Decrement, // b--
 }
-impl From<PrefixUnaryOp> for UnaryOp {
-    fn from(value: PrefixUnaryOp) -> Self {
-        use PrefixUnaryOp::*;
-        match value {
-            Ref => UnaryOp::Ref,
-            Not => UnaryOp::Not,
-            Neg => UnaryOp::Neg,
-            Pos => UnaryOp::Pos,
-            LfT => UnaryOp::LfT,
-        }
-    }
-}
-impl From<PostfixUnaryOp> for UnaryOp {
-    fn from(value: PostfixUnaryOp) -> Self {
-        use PostfixUnaryOp::*;
-        match value {
-            Increment => UnaryOp::Increment,
-            Decrement => UnaryOp::Decrement,
-        }
-    }
-}
+
 impl fmt::Display for UnaryOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use UnaryOp::*;
         let string = match self {
             Ref => "->",
+            Deref => "*",
             Not => "!",
 
             Neg => "-",
-            Pos => "+",
 
             LfT => "'",
 
@@ -56,6 +36,7 @@ impl fmt::Display for UnaryOp {
         write!(f, "{}", string)
     }
 }
+
 impl UnaryOp {
     pub(in crate::parser) fn is_postfix(self) -> bool {
         matches!(self, Self::Decrement | Self::Increment)
@@ -66,9 +47,9 @@ impl BindingPow for UnaryOp {
         use UnaryOp::*;
         match self {
             Neg => 13,
-            Pos => 13,
 
             Ref => 18,
+            Deref => 18,
             Not => 18,
 
             Increment => 17,
@@ -76,47 +57,5 @@ impl BindingPow for UnaryOp {
 
             LfT => 20,
         }
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub enum PrefixUnaryOp {
-    // infront of one argument // unary - prefix - ops
-    Ref, // -> a
-    Not, // !a
-    Neg, // -a
-    Pos, // +a
-    LfT, // 'a
-}
-
-impl fmt::Display for PrefixUnaryOp {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use PrefixUnaryOp::*;
-        let string = match self {
-            Ref => "->",
-            Not => "!",
-            Neg => "- {",
-            Pos => "+ {",
-            LfT => "'",
-        };
-        write!(f, "{}", string)
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub enum PostfixUnaryOp {
-    // after one argument // unary - postfix - ops
-    Increment, // a++
-    Decrement, // b--
-}
-
-impl fmt::Display for PostfixUnaryOp {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use PostfixUnaryOp::*;
-        let string = match self {
-            Increment => "++",
-            Decrement => "--",
-        };
-        write!(f, "{}", string)
     }
 }

@@ -155,39 +155,50 @@ pub fn value_to_node<'a, Wrapper: NodeWrapping>(
     } {
         Ok((number, suffix)) => match divisor {
             Some(divisor) => {
-                let number = tree.add(Wrapper::new(pos).with_node(Node::Literal {
-                    val: number,
-                    imaginary_coefficient: is_imaginary,
-                }));
-                let divisor = tree.add(Wrapper::new(pos).with_node(Node::Literal {
-                    val: divisor.into(),
-                    imaginary_coefficient: false,
-                }));
+                let number = tree.add(Wrapper::new(
+                    pos,
+                    Node::Literal {
+                        val: number,
+                        imaginary_coefficient: is_imaginary,
+                    },
+                ));
+                let divisor = tree.add(Wrapper::new(
+                    pos,
+                    Node::Literal {
+                        val: divisor.into(),
+                        imaginary_coefficient: false,
+                    },
+                ));
                 let ratio = tree.add(
-                    Wrapper::new(pos)
-                        .with_node(Node::BinaryOp {
+                    Wrapper::new(
+                        pos,
+                        Node::BinaryOp {
                             op: BinaryOp::Div,
                             left: number,
                             right: divisor,
-                        })
-                        .with_type(suffix),
+                        },
+                    )
+                    .with_type(suffix),
                 );
-                Wrapper::new(pos).with_node(Node::Brackets {
-                    kind: Bracket::Round,
-                    content: ratio,
-                })
+                Wrapper::new(
+                    pos,
+                    Node::Brackets {
+                        kind: Bracket::Round,
+                        content: ratio,
+                    },
+                )
             }
-            None => Wrapper::new(pos)
-                .with_node(Node::Literal {
+            None => Wrapper::new(
+                pos,
+                Node::Literal {
                     val: number,
                     imaginary_coefficient: is_imaginary,
-                })
-                .with_type(suffix),
+                },
+            )
+            .with_type(suffix),
         },
-        Err(Some(comment)) => Wrapper::new(pos)
-            .with_node(Node::Id(name.to_owned()))
-            .add_note(comment),
-        Err(None) => Wrapper::new(pos).with_node(Node::Id(name.to_owned())),
+        Err(Some(comment)) => Wrapper::new(pos, Node::Ident(name.to_owned())).add_note(comment),
+        Err(None) => Wrapper::new(pos, Node::Ident(name.to_owned())),
     }
 }
 fn parse_integer(
@@ -357,40 +368,50 @@ fn test_number_parsing() {
     let pos = Span::beginning();
     let tests = [(
         "1",
-        NodeWrapper::new(pos)
-            .with_node(Node::Literal {
+        NodeWrapper::new(
+            pos,
+            Node::Literal {
                 val: 1u32.into(),
                 imaginary_coefficient: false,
-            })
-            .with_type(Number(NativNumber::Arbitrary)),
+            },
+        )
+        .with_type(Number(NativNumber::Arbitrary)),
         "0xA",
-        NodeWrapper::new(pos)
-            .with_node(Node::Literal {
+        NodeWrapper::new(
+            pos,
+            Node::Literal {
                 val: 10u32.into(),
                 imaginary_coefficient: false,
-            })
-            .with_type(Number(NativNumber::Arbitrary)),
+            },
+        )
+        .with_type(Number(NativNumber::Arbitrary)),
         "0d10",
-        NodeWrapper::new(pos)
-            .with_node(Node::Literal {
+        NodeWrapper::new(
+            pos,
+            Node::Literal {
                 val: 12u32.into(),
                 imaginary_coefficient: false,
-            })
-            .with_type(Number(NativNumber::Arbitrary)),
+            },
+        )
+        .with_type(Number(NativNumber::Arbitrary)),
         "0s100_u0x27_i",
-        NodeWrapper::new(pos)
-            .with_node(Node::Literal {
+        NodeWrapper::new(
+            pos,
+            Node::Literal {
                 val: 36u32.into(),
                 imaginary_coefficient: true,
-            })
-            .with_type(Number(NativNumber::Unsigned(Some(39)))),
+            },
+        )
+        .with_type(Number(NativNumber::Unsigned(Some(39)))),
         "0b100_ui",
-        NodeWrapper::new(pos)
-            .with_node(Node::Literal {
+        NodeWrapper::new(
+            pos,
+            Node::Literal {
                 val: 4u32.into(),
                 imaginary_coefficient: true,
-            })
-            .with_type(Number(NativNumber::Unsigned(None))),
+            },
+        )
+        .with_type(Number(NativNumber::Unsigned(None))),
     )];
     for test in tests {
         let node = value_to_node(test.0.into(), pos, &mut node_buffer);
