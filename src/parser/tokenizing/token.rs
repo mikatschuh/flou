@@ -13,10 +13,26 @@ pub struct Token<'src> {
 
 #[derive(PartialEq, Debug, Clone, Copy, Eq)]
 pub enum TokenKind {
-    Not,        // !
-    Tick,       // '
-    Equal,      // =
-    RightArrow, // ->
+    Not,   // !
+    Tick,  // '
+    Equal, // =
+
+    EqualEqual, // ==
+    NotEqual,   // !=
+
+    Left,         // <
+    LeftLeft,     // <<
+    NotLeft,      // !<
+    LeftEqual,    // <=
+    NotLeftEqual, // !<=
+    LeftArrow,    // <-
+
+    Right,         // >
+    RightRight,    // >>
+    NotRight,      // !>
+    RightEqual,    // >=
+    NotRightEqual, // !>=
+    RightArrow,    // ->
 
     Plus,       // +
     PlusPlus,   // ++
@@ -40,36 +56,25 @@ pub enum TokenKind {
     UpEqual,    // a ^= b
 
     Pipe,         // |
-    NotPipe,      // !|
     PipePipe,     // ||
+    NotPipe,      // !|
     NotPipePipe,  // !||
     PipeEqual,    // |=
     NotPipeEqual, // !|=
 
     RightPipe,         // >|
-    NotRightPipe,      // !>|
     RightPipePipe,     // >||
+    NotRightPipe,      // !>|
     NotRightPipePipe,  // !>||
     RightPipeEqual,    // >|=
     NotRightPipeEqual, // !>|=
 
     And,         // &
-    NotAnd,      // !&
     AndAnd,      // &&
+    NotAnd,      // !&
     NotAndAnd,   // !&&
     AndEqual,    // &=
     NotAndEqual, // !&=
-
-    EqualEqual,    // ==
-    NotEqual,      // !=
-    Left,          // <
-    NotLeft,       // !<
-    LeftEqual,     // <=
-    NotLeftEqual,  // !<=
-    Right,         // >
-    NotRight,      // !>
-    RightEqual,    // >=
-    NotRightEqual, // !>=
 
     Colon,      // :
     ColonEqual, // :=
@@ -100,6 +105,22 @@ impl Display for Token<'_> {
                 Not => "!",
                 Tick => "'",
                 Equal => "=",
+
+                EqualEqual => "==",
+                NotEqual => "!=",
+
+                Left => "<",
+                LeftLeft => "<<",
+                NotLeft => "!<",
+                LeftEqual => "<=",
+                NotLeftEqual => "!<=",
+                LeftArrow => "<-",
+
+                Right => ">",
+                RightRight => ">>",
+                NotRight => "!>",
+                RightEqual => ">=",
+                NotRightEqual => "!>=",
                 RightArrow => "->",
 
                 Plus => "+",
@@ -124,36 +145,25 @@ impl Display for Token<'_> {
                 UpEqual => "^=",
 
                 Pipe => "|",
-                NotPipe => "!|",
                 PipePipe => "||",
+                NotPipe => "!|",
                 NotPipePipe => "!||",
                 PipeEqual => "|=",
                 NotPipeEqual => "!|=",
 
                 RightPipe => ">|",
-                NotRightPipe => "!>|",
                 RightPipePipe => ">||",
+                NotRightPipe => "!>|",
                 NotRightPipePipe => "!>||",
                 RightPipeEqual => ">|=",
                 NotRightPipeEqual => "!>|=",
 
                 And => "&",
-                NotAnd => "!&",
                 AndAnd => "&&",
+                NotAnd => "!&",
                 NotAndAnd => "!&&",
                 AndEqual => "&=",
                 NotAndEqual => "!&=",
-
-                EqualEqual => "==",
-                NotEqual => "!=",
-                Left => "<",
-                NotLeft => "!<",
-                LeftEqual => "<=",
-                NotLeftEqual => "!<=",
-                Right => ">",
-                NotRight => "!>",
-                RightEqual => ">=",
-                NotRightEqual => "!>=",
 
                 Colon => ":",
                 ColonEqual => ":=",
@@ -297,6 +307,8 @@ impl TokenKind {
             },
             Left => match c {
                 '=' => Some(LeftEqual),
+                '<' => Some(LeftLeft),
+                '-' => Some(LeftArrow),
                 _ => None,
             },
             NotLeft => match c {
@@ -305,6 +317,7 @@ impl TokenKind {
             },
             Right => match c {
                 '=' => Some(RightEqual),
+                '>' => Some(RightRight),
                 '|' => Some(RightPipe),
                 '<' => Some(Cross),
                 _ => None,

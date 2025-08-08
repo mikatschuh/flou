@@ -1,13 +1,12 @@
 pub mod token;
 
-use arrayvec::ArrayVec;
 use std::str::CharIndices;
 use token::Token;
 
 use crate::{
     error::{ErrorCode, Errors, Position, Span},
     parser::tokenizing::token::TokenKind,
-    utilities::Rc,
+    utilities::{ArrayQueue, Rc},
 };
 #[derive(Debug, Clone)]
 pub struct Tokenizer<'src> {
@@ -23,7 +22,7 @@ pub struct Tokenizer<'src> {
     last_i: usize,
     i: usize,
 
-    buffer: ArrayVec<Token<'src>, 2>,
+    buffer: ArrayQueue<Token<'src>, 2, 1>,
 
     errors: Rc<Errors<'src>>,
 }
@@ -86,7 +85,7 @@ impl<'src> Tokenizer<'src> {
             last_i: 0,
             i: 0,
 
-            buffer: ArrayVec::new(),
+            buffer: ArrayQueue::new(),
 
             errors,
         }
@@ -96,7 +95,7 @@ impl<'src> Tokenizer<'src> {
         if self.buffer.is_empty() {
             self.restock_tokens();
         }
-        self.buffer.last()
+        self.buffer.peek()
     }
 }
 
@@ -133,10 +132,8 @@ impl<'src> Tokenizer<'src> {
                 );
             } else {
                 if c == '"' {
-                    let span = self.span - 1; // ignore the quotation mark
-                    let last_i = self.last_i;
-                    self.quote(self.i); // the tokens need to be submitted in the opposite order for the buffer to function correctly
-                    self.submit_current(span, last_i);
+                    self.submit_current(self.span - 1, self.last_i); // -1 to ignore the quotation mark
+                    self.quote(self.i);
                     return;
                 }
                 if let State::Op(ref mut token) = self.state {
@@ -306,7 +303,7 @@ fn text() {
     use TokenKind::*;
     let errors = Rc::new(Errors::empty(Path::new("example.flou")));
     assert_eq!(
-        Tokenizer::new("+++*===!>|", errors.clone())
+        Tokenizer::new("+++*===!>|\nx\"some string\"+1 v", errors.clone())
             .into_iter()
             .collect::<Vec<_>>(),
         vec![
@@ -314,7 +311,12 @@ fn text() {
             Token::new(Span::at(3, 1, 3, 1), "+", Plus),
             Token::new(Span::at(4, 1, 5, 1), "*=", StarEqual),
             Token::new(Span::at(6, 1, 7, 1), "==", EqualEqual),
-            Token::new(Span::at(8, 1, 10, 1), "!>|", NotRightPipe)
+            Token::new(Span::at(8, 1, 10, 1), "!>|", NotRightPipe),
+            Token::new(Span::at(1, 2, 1, 2), "x", Ident),
+            Token::new(Span::at(2, 2, 14, 2), "\"some string\"", Quote),
+            Token::new(Span::at(15, 2, 15, 2), "+", Plus),
+            Token::new(Span::at(16, 2, 16, 2), "1", Ident),
+            Token::new(Span::at(18, 2, 18, 2), "v", Ident)
         ]
     )
 }
