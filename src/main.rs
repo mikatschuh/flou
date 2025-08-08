@@ -1,7 +1,6 @@
-use std::{time::Instant, u128};
-
 use clap::{Parser, Subcommand};
 use colored::*;
+use std::{time::Instant, u128};
 
 use error::CliError;
 use threader::Threadpool;
@@ -17,6 +16,7 @@ mod typing;
 mod utilities;
 #[macro_use]
 mod comp;
+mod bench;
 mod vms;
 /*
 ___    __
@@ -48,7 +48,7 @@ fn main() {
             task,
             "with",
             attributes,
-            format!("in: {}", flou::format_time(time_past))
+            format!("in: {}", format_time(time_past))
         )
     }
     match Cli::try_parse() {

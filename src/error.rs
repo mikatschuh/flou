@@ -353,6 +353,12 @@ impl Position {
         self.line += 1;
         self.collum = 1;
     }
+    #[inline]
+    pub fn at_next_line(mut self) -> Position {
+        self.line += 1;
+        self.collum = 1;
+        self
+    }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Span {

@@ -1,3 +1,4 @@
+pub mod test;
 pub mod token;
 
 use std::str::CharIndices;
@@ -19,15 +20,15 @@ pub struct Tokenizer<'src> {
     chars: CharIndices<'src>,
 
     start_i: usize,
-    last_i: usize,
     i: usize,
+    next_i: usize,
 
     buffer: ArrayQueue<Token<'src>, 2, 1>,
 
     errors: Rc<Errors<'src>>,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum State {
     Op(TokenKind),
     Id,
@@ -55,9 +56,9 @@ impl PositionState {
             JustAfterNewLine => pos.next_line(),
             WithinLine => *pos += 1,
         }
-        match c {
-            '\n' => *self = JustAfterNewLine,
-            _ => *self = WithinLine,
+        *self = match c {
+            '\n' => JustAfterNewLine,
+            _ => WithinLine,
         }
     }
 }
@@ -82,8 +83,8 @@ impl<'src> Tokenizer<'src> {
             chars: text.char_indices(),
 
             start_i: 0,
-            last_i: 0,
             i: 0,
+            next_i: 0,
 
             buffer: ArrayQueue::new(),
 
@@ -105,8 +106,8 @@ impl<'src> Tokenizer<'src> {
             return None;
         };
         self.pos_state.step(self.span.end_mut(), c);
-        self.last_i = self.i;
-        self.i = i;
+        self.i = self.next_i;
+        self.next_i = i + c.len_utf8();
         Some(c)
     }
 
@@ -126,23 +127,21 @@ impl<'src> Tokenizer<'src> {
     fn restock_tokens(&mut self) {
         while let Some(c) = self.next_char() {
             if c.is_whitespace() {
-                if matches!(self.state, State::Op(TokenKind::Not | TokenKind::NotNot)) {
+                if matches!(self.state, State::Op(TokenKind::Not | TokenKind::NotNot))
+                // ignore whitespaces when parsing a '!'
+                {
                     continue;
-                } // ignore whitespaces when parsing a '!'
-
-                self.submit_current(
-                    self.span - 1, // to ignore the whitespace
-                    self.last_i,
-                );
+                }
+                self.submit_current(self.span - 1, self.i); // -1 to ignore the whitespace
             } else {
                 if c == '"' {
-                    self.submit_current(self.span - 1, self.last_i); // -1 to ignore the quotation mark
+                    self.submit_current(self.span - 1, self.i); // -1 to ignore the quotation mark
                     self.quote(self.i);
                     return;
                 }
                 if let State::Op(ref mut token) = self.state {
                     if *token == TokenKind::Slash && c == '/' {
-                        self.comment(self.last_i);
+                        self.comment(self.i - 1);
 
                         self.state = State::Nothing;
                         continue;
@@ -150,11 +149,11 @@ impl<'src> Tokenizer<'src> {
                         *token = new_token;
                         continue;
                     } else {
-                        self.submit_current(self.span - 1, self.last_i);
+                        self.submit_current(self.span - 1, self.i);
                     }
                 }
                 if let Some(new_token) = TokenKind::new(c) {
-                    self.submit_current(self.span - 1, self.last_i); // incase the previous one was an identifier
+                    self.submit_current(self.span - 1, self.i); // incase the previous one was an identifier
                     self.set_op(new_token);
                 } else if let State::Nothing = self.state {
                     self.set_id();
@@ -164,7 +163,7 @@ impl<'src> Tokenizer<'src> {
                 return;
             }
         }
-        self.submit_current(self.span, self.i);
+        self.submit_current(self.span, self.next_i);
     }
 
     fn comment(&mut self, _: usize) {
@@ -185,7 +184,7 @@ impl<'src> Tokenizer<'src> {
                 '"' => {
                     self.buffer.push(Token {
                         span: self.span,
-                        src: &self.text[start_i..=self.i],
+                        src: &self.text[start_i..self.next_i],
                         kind: TokenKind::Quote,
                     });
                     return;
@@ -196,12 +195,12 @@ impl<'src> Tokenizer<'src> {
         self.errors.push(
             self.span,
             ErrorCode::MissingClosingQuotes {
-                quote: &self.text[start_i..=self.i],
+                quote: &self.text[start_i..self.next_i],
             },
         );
         self.buffer.push(Token {
             span: self.span,
-            src: &self.text[start_i..=self.i],
+            src: &self.text[start_i..self.next_i],
             kind: TokenKind::Quote,
         })
     }
@@ -210,15 +209,15 @@ impl<'src> Tokenizer<'src> {
         match self.state {
             State::Op(token) => self.buffer.push(Token {
                 span,
-                src: &self.text[self.start_i..=end_i],
+                src: &self.text[self.start_i..end_i],
                 kind: token,
             }),
             State::Id => self.buffer.push(Token {
                 span,
-                src: &self.text[self.start_i..=end_i],
+                src: &self.text[self.start_i..end_i],
                 kind: TokenKind::Ident,
             }),
-            State::Nothing => return, // skips the self.state = State::Nothing
+            State::Nothing => return, // skip the reassignment
         }
         self.state = State::Nothing
     }
@@ -299,45 +298,4 @@ pub fn resolve_escape_sequences(quote: &str) -> (String, Vec<EscapeSequenceConfu
     }
     output_string.pop();
     (output_string, confusions)
-}
-
-#[test]
-fn text() {
-    use std::path::Path;
-    use TokenKind::*;
-    let errors = Rc::new(Errors::empty(Path::new("example.flou")));
-    assert_eq!(
-        Tokenizer::new("+++*===!>|\nx\"some string\"+1 v", errors.clone())
-            .into_iter()
-            .collect::<Vec<_>>(),
-        vec![
-            Token::new(Span::at(1, 1, 2, 1), "++", PlusPlus),
-            Token::new(Span::at(3, 1, 3, 1), "+", Plus),
-            Token::new(Span::at(4, 1, 5, 1), "*=", StarEqual),
-            Token::new(Span::at(6, 1, 7, 1), "==", EqualEqual),
-            Token::new(Span::at(8, 1, 10, 1), "!>|", NotRightPipe),
-            Token::new(Span::at(1, 2, 1, 2), "x", Ident),
-            Token::new(Span::at(2, 2, 14, 2), "\"some string\"", Quote),
-            Token::new(Span::at(15, 2, 15, 2), "+", Plus),
-            Token::new(Span::at(16, 2, 16, 2), "1", Ident),
-            Token::new(Span::at(18, 2, 18, 2), "v", Ident)
-        ]
-    );
-    assert_eq!(
-        Tokenizer::new("! ! !! ! =", errors.clone())
-            .into_iter()
-            .collect::<Vec<_>>(),
-        vec![Token::new(Span::at(1, 1, 10, 1), "! ! !! ! =", NotEqual)]
-    );
-    assert_eq!(
-        Tokenizer::new("! ! !! !! >||, !!+", errors.clone())
-            .into_iter()
-            .collect::<Vec<_>>(),
-        vec![
-            Token::new(Span::at(1, 1, 13, 1), "! ! !! !! >||", RightPipePipe),
-            Token::new(Span::at(14, 1, 14, 1), ",", Comma),
-            Token::new(Span::at(16, 1, 17, 1), "!!", NotNot),
-            Token::new(Span::at(18, 1, 18, 1), "+", Plus),
-        ]
-    )
 }
