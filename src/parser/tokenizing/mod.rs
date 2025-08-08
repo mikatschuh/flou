@@ -126,6 +126,10 @@ impl<'src> Tokenizer<'src> {
     fn restock_tokens(&mut self) {
         while let Some(c) = self.next_char() {
             if c.is_whitespace() {
+                if matches!(self.state, State::Op(TokenKind::Not | TokenKind::NotNot)) {
+                    continue;
+                } // ignore whitespaces when parsing a '!'
+
                 self.submit_current(
                     self.span - 1, // to ignore the whitespace
                     self.last_i,
@@ -317,6 +321,23 @@ fn text() {
             Token::new(Span::at(15, 2, 15, 2), "+", Plus),
             Token::new(Span::at(16, 2, 16, 2), "1", Ident),
             Token::new(Span::at(18, 2, 18, 2), "v", Ident)
+        ]
+    );
+    assert_eq!(
+        Tokenizer::new("! ! !! ! =", errors.clone())
+            .into_iter()
+            .collect::<Vec<_>>(),
+        vec![Token::new(Span::at(1, 1, 10, 1), "! ! !! ! =", NotEqual)]
+    );
+    assert_eq!(
+        Tokenizer::new("! ! !! !! >||, !!+", errors.clone())
+            .into_iter()
+            .collect::<Vec<_>>(),
+        vec![
+            Token::new(Span::at(1, 1, 13, 1), "! ! !! !! >||", RightPipePipe),
+            Token::new(Span::at(14, 1, 14, 1), ",", Comma),
+            Token::new(Span::at(16, 1, 17, 1), "!!", NotNot),
+            Token::new(Span::at(18, 1, 18, 1), "+", Plus),
         ]
     )
 }

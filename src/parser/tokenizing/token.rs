@@ -13,9 +13,10 @@ pub struct Token<'src> {
 
 #[derive(PartialEq, Debug, Clone, Copy, Eq)]
 pub enum TokenKind {
-    Not,   // !
-    Tick,  // '
-    Equal, // =
+    Not,    // !
+    NotNot, // !!
+    Tick,   // '
+    Equal,  // =
 
     EqualEqual, // ==
     NotEqual,   // !=
@@ -103,6 +104,7 @@ impl Display for Token<'_> {
             "{}",
             match self.kind {
                 Not => "!",
+                NotNot => "!!",
                 Tick => "'",
                 Equal => "=",
 
@@ -228,6 +230,7 @@ impl TokenKind {
         // transformation table to make tokens out of their char components
         match self {
             Not => match c {
+                '!' => Some(NotNot),
                 '=' => Some(NotEqual),
                 '|' => Some(NotPipe),
                 '&' => Some(NotAnd),
@@ -235,9 +238,18 @@ impl TokenKind {
                 '>' => Some(NotRight),
                 _ => None,
             },
-            Equal => match c {
+            NotNot => match c {
+                '!' => Some(Not),
                 '=' => Some(EqualEqual),
+                '|' => Some(Pipe),
+                '&' => Some(And),
+                '<' => Some(Left),
+                '>' => Some(Right),
+                _ => None,
+            },
+            Equal => match c {
                 '|' => Some(EqualPipe),
+                '=' => Some(EqualEqual),
                 _ => None,
             },
             Plus => match c {
@@ -306,9 +318,9 @@ impl TokenKind {
                 _ => None,
             },
             Left => match c {
-                '=' => Some(LeftEqual),
                 '<' => Some(LeftLeft),
                 '-' => Some(LeftArrow),
+                '=' => Some(LeftEqual),
                 _ => None,
             },
             NotLeft => match c {
@@ -323,8 +335,8 @@ impl TokenKind {
                 _ => None,
             },
             NotRight => match c {
-                '=' => Some(NotRightEqual),
                 '|' => Some(NotRightPipe),
+                '=' => Some(NotRightEqual),
                 _ => None,
             },
             Colon => match c {
@@ -340,7 +352,7 @@ impl TokenKind {
     }
     pub fn ends_with(self, c: char) -> bool {
         match c {
-            '!' => matches!(self, Not),
+            '!' => matches!(self, Not | NotNot),
             '\'' => matches!(self, Tick),
             '=' => matches!(
                 self,
@@ -368,14 +380,14 @@ impl TokenKind {
                     | ColonEqual
                     | SwapSign
             ),
-            '>' => matches!(self, RightArrow | Right | NotRight),
+            '>' => matches!(self, RightArrow | Right | RightRight | NotRight),
             '+' => matches!(self, Plus | PlusPlus),
-            '-' => matches!(self, Minus | MinusMinus),
+            '-' => matches!(self, Minus | MinusMinus | LeftArrow),
             '*' => self == Star,
             '/' => self == Slash,
             '%' => self == Percent,
             '·' => self == Dot,
-            '<' => matches!(self, Cross | Left | NotLeft),
+            '<' => matches!(self, Cross | Left | LeftLeft | NotLeft),
             '^' => self == Up,
             '|' => matches!(
                 self,

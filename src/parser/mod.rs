@@ -1,5 +1,6 @@
-use crate::{error::Errors, parser::tokenizing::Tokenizer, utilities::Rc};
+use crate::{error::Errors, utilities::Rc};
 use std::path::Path;
+use tokenizing::Tokenizer;
 
 #[allow(dead_code)]
 pub mod binary_op;

@@ -8,9 +8,9 @@ use std::ops::Sub;
 use std::ops::SubAssign;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Errors<'a> {
-    file: &'a Path,
-    errors: Vec<Error<'a>>,
+pub struct Errors<'src> {
+    file: &'src Path,
+    errors: Vec<Error<'src>>,
 }
 
 impl<'a> Errors<'a> {
@@ -43,30 +43,30 @@ impl fmt::Display for Errors<'_> {
     }
 }
 #[derive(Clone, Debug, PartialEq)]
-pub struct Error<'a> {
+pub struct Error<'src> {
     section: Span,
-    error: ErrorCode<'a>,
+    error: ErrorCode<'src>,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ErrorCode<'a> {
+pub enum ErrorCode<'src> {
     ExpectedValue {
-        found: &'a str,
+        found: &'src str,
     },
     DidntExpectValue {
-        found: &'a str,
+        found: &'src str,
     },
     UnknownOperator {
-        op: &'a str,
+        op: &'src str,
     },
     MissingClosingQuotes {
-        quote: &'a str,
+        quote: &'src str,
     },
     NumberContainedOnlyPrefix {
-        number: &'a str,
+        number: &'src str,
     },
     InvalidCombination {
-        left: Option<Token<'a>>,
-        right: Option<Token<'a>>,
+        left: Option<Token<'src>>,
+        right: Option<Token<'src>>,
     },
     // control structure mistakes
     ElseWithNoIf,

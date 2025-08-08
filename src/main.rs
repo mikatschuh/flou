@@ -41,6 +41,16 @@ enum Commands {
     Build { path: Option<String> },
 }
 fn main() {
+    fn summarize(time_past: u128, task: &str, attributes: &str) {
+        println!(
+            "\n{}  {} {} {} {}\n",
+            "Finished".bold(),
+            task,
+            "with",
+            attributes,
+            format!("in: {}", flou::format_time(time_past))
+        )
+    }
     match Cli::try_parse() {
         Ok(parsed) => match parsed.command {
             Some(Commands::Build { path }) => {
@@ -53,7 +63,7 @@ fn main() {
                 })() {
                     println!("\n{}\n", e);
                 } else {
-                    print_time(now.elapsed().as_nanos(), "compiling", "no optimizations");
+                    summarize(now.elapsed().as_nanos(), "compiling", "no optimizations");
                 }
             }
             None => println!("{}", *ABOUT),
