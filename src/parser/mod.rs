@@ -1,8 +1,8 @@
 use crate::{
     comp,
-    error::Errors,
+    error::{ErrorCode, Errors},
     parser::{intern::Internalizer, tokenizing::resolve_escape_sequences},
-    tree::{Node, NodeId, NodeWrapper, NodeWrapping, Note, Tree},
+    tree::{Bracket, Node, NodeId, NodeWrapper, NodeWrapping, Note, Tree},
     utilities::Rc,
 };
 use std::path::Path;
@@ -99,6 +99,39 @@ impl<'src, W: NodeWrapping<'src>> Parser<'src, W> {
                             .collect(),
                     ),
                 )
+            }
+            OpenParen => {
+                let content = self.parse_expr(0)?; // lowest except for commas
+                if let Some(Token {
+                    kind: ClosedParen, ..
+                }) = self.tokenizer.peek()
+                {
+                    let span = self.tokenizer.next().unwrap().span;
+                    *self.tree[content].span_mut() = token.span - span;
+                    content
+                } else if let Some(Token {
+                    kind: ClosedBracket,
+                    ..
+                }) = self.tokenizer.peek()
+                {
+                    let span = self.tokenizer.next().unwrap().span;
+                    self.errors.push(
+                        token.span - span,
+                        ErrorCode::WrongClosedBracket {
+                            expected: Bracket::Round,
+                            found: Bracket::Squared,
+                        },
+                    );
+                    content
+                } else {
+                    self.errors.push(
+                        token.span,
+                        ErrorCode::NoClosedBracket {
+                            opened: Bracket::Round,
+                        },
+                    );
+                    content
+                }
             }
             _ => match token.kind.as_prefix() {
                 Some(op) => {

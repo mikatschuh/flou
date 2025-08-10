@@ -194,7 +194,7 @@ impl<'src> Tokenizer<'src> {
         }
         self.errors.push(
             self.span,
-            ErrorCode::MissingClosingQuotes {
+            ErrorCode::NoClosingQuotes {
                 quote: &self.text[start_i..self.next_i],
             },
         );

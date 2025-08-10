@@ -58,7 +58,7 @@ pub enum ErrorCode<'src> {
     UnknownOperator {
         op: &'src str,
     },
-    MissingClosingQuotes {
+    NoClosingQuotes {
         quote: &'src str,
     },
     NumberContainedOnlyPrefix {
@@ -74,6 +74,9 @@ pub enum ErrorCode<'src> {
     // bracket errors
     NoOpenedBracket {
         closed: Bracket,
+    },
+    NoClosedBracket {
+        opened: Bracket,
     },
     WrongClosedBracket {
         expected: Bracket,
@@ -226,7 +229,7 @@ impl Error<'_> {
                     "didn't expect a value found {}",
                     [*found]
                 ),
-                MissingClosingQuotes { quote } => format_error!(
+                NoClosingQuotes { quote } => format_error!(
                     self.section.to_string(path),
                     "the ending quotes of the quote {} were missing",
                     [format!("{}{}{}", "\"", quote, "\"".red().underline())]
@@ -280,6 +283,13 @@ impl Error<'_> {
                         self.section.to_string(path),
                         "there was a closed bracket {} but no opened one",
                         [closed.display_closed()]
+                    )
+                }
+                NoClosedBracket { opened } => {
+                    format_error!(
+                        self.section.to_string(path),
+                        "there was a opened bracket {} but no closed one",
+                        [opened.display_closed()]
                     )
                 }
                 WrongClosedBracket { expected, found } => {
