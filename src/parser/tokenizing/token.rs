@@ -5,6 +5,7 @@ use colored::{ColoredString, Colorize};
 use crate::{
     error::Span,
     parser::{binary_op::BinaryOp, unary_op::UnaryOp},
+    tree::Bracket,
 };
 
 #[derive(PartialEq, Debug, Clone, Eq)]
@@ -90,14 +91,10 @@ pub enum TokenKind {
     Ident, // _
     Quote, // "_"
 
-    OpenParen,   // (
-    OpenBracket, // [
-    OpenBrace,   // {
-
-    ClosedParen,   // )
-    ClosedBracket, // ]
-    ClosedBrace,   // }
+    Open(Bracket),   // ( / [ / {
+    Closed(Bracket), // ) / ] / }
 }
+use Bracket::*;
 use TokenKind::*;
 
 impl Display for Token<'_> {
@@ -180,13 +177,9 @@ impl Display for Token<'_> {
                 Ident => self.src,
                 Quote => self.src,
 
-                OpenParen => "(",
-                OpenBracket => "[",
-                OpenBrace => "{",
+                Open(bracket) => bracket.display_open(),
 
-                ClosedParen => ")",
-                ClosedBracket => "]",
-                ClosedBrace => "}",
+                Closed(bracket) => bracket.display_closed(),
             }
         )
     }
@@ -220,12 +213,12 @@ impl TokenKind {
             '>' => Some(Right),
             ':' => Some(Colon),
             ',' => Some(Comma),
-            '(' => Some(OpenParen),
-            '[' => Some(OpenBracket),
-            '{' => Some(OpenBrace),
-            ')' => Some(ClosedParen),
-            ']' => Some(ClosedBracket),
-            '}' => Some(ClosedBrace),
+            '(' => Some(Open(Round)),
+            '[' => Some(Open(Squared)),
+            '{' => Some(Open(Curly)),
+            ')' => Some(Closed(Round)),
+            ']' => Some(Closed(Squared)),
+            '}' => Some(Closed(Curly)),
             _ => None,
         }
     }
@@ -406,12 +399,12 @@ impl TokenKind {
             '&' => matches!(self, And | NotAnd | AndAnd | NotAndAnd),
             ':' => self == Colon,
             ',' => self == Comma,
-            '(' => self == OpenParen,
-            '[' => self == OpenBracket,
-            '{' => self == OpenBrace,
-            ')' => self == ClosedParen,
-            ']' => self == ClosedBracket,
-            '}' => self == ClosedBrace,
+            '(' => self == Open(Round),
+            '[' => self == Open(Squared),
+            '{' => self == Open(Curly),
+            ')' => self == Closed(Round),
+            ']' => self == Closed(Squared),
+            '}' => self == Closed(Curly),
             _ => false,
         }
     }

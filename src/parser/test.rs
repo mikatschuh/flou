@@ -71,13 +71,13 @@ fn test() {
 
     macro_rules! parse {
         ($text:expr) => {{
-            let mut parser = Parser::<NodeWrapper>::new(
+            let (root, tree) = Parser::<NodeWrapper>::new(
                 Tokenizer::new($text, errors.clone()),
                 internalizer.clone(),
                 errors.clone(),
-            );
-            let root = parser.parse_expr(0).unwrap();
-            parser.tree().build_graph(root)
+            )
+            .parse();
+            tree.clone().build_graph(root)
         }};
     }
     assert_eq!(

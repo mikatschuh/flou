@@ -10,27 +10,26 @@ impl BinaryOp {
             | AddAssign | SubAssign | MulAssign | DivAssign | ModAssign | DotAssign
             | CrossAssign | PowerAssign | Swap => (4, 5),
 
-            // Comma => 6
-            Or | Nor => (7, 8),
-            Xor | Xnor => (9, 10),
-            And | Nand => (11, 12),
+            // Comma => (6, 7)
+            Or | Nor => (8, 9),
+            Xor | Xnor => (10, 11),
+            And | Nand => (12, 13),
 
-            Equal | NonEqual | Smaller | SmallerOrEqual | Greater | GreaterOrEqual => (13, 13),
+            Equal | NonEqual | Smaller | SmallerOrEqual | Greater | GreaterOrEqual => (14, 15),
 
-            BitShiftLeft => (14, 15),
-            BitShiftRight => (16, 17),
+            BitShiftLeft | BitShiftRight => (16, 17),
 
-            BitOr | BitNor => (18, 19),
-            BitXor | BitXnor => (20, 21),
-            BitAnd | BitNand => (22, 23),
+            BitOr | BitNor => (19, 20),
+            BitXor | BitXnor => (21, 22),
+            BitAnd | BitNand => (23, 24),
 
-            Add | Sub => (24, 25),
+            Add | Sub => (25, 26),
 
-            Mul | Div | Mod | Dot | Cross => (26, 27),
+            Mul | Div | Mod | Dot | Cross => (26, 28),
             // Neg => 15
-            Power => (28, 27),
+            Power => (29, 30),
 
-            Index | App => (33, 35),
+            Index | App => (33, 34),
         }
     }
 }
@@ -38,7 +37,7 @@ impl UnaryOp {
     pub fn binding_pow(self) -> u8 {
         use UnaryOp::*;
         match self {
-            Neg => 27,
+            Neg => 28,
 
             Ref | Deref | Not => 32,
 

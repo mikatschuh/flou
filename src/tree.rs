@@ -424,7 +424,7 @@ pub enum HeapNode<'src> {
     }, // squared content squared
 }
 impl<'src> Node<'src> {
-    fn as_heap<W: NodeWrapping<'src>>(&self, tree: &'src Tree<'src, W>) -> HeapNode<'src> {
+    fn as_heap<W: NodeWrapping<'src>>(&'src self, tree: &'src Tree<'src, W>) -> HeapNode<'src> {
         fn boxed<'src, W: NodeWrapping<'src>>(
             node: &NodeId<'src>,
             tree: &'src Tree<'src, W>,
@@ -602,13 +602,10 @@ impl<'tree> NodeId<'tree> {
         tree[self].node_mut()
     }
     #[inline]
-    pub fn get_wrapper<'src, Wrapper: NodeWrapping<'src>>(
+    pub fn get_wrapper<Wrapper: NodeWrapping<'tree>>(
         self,
-        tree: &'tree Tree<'src, Wrapper>,
-    ) -> &'tree Wrapper
-    where
-        'tree: 'src,
-    {
+        tree: &'tree Tree<'tree, Wrapper>,
+    ) -> &'tree Wrapper {
         &tree[self]
     }
     #[inline]
@@ -636,7 +633,7 @@ impl<'src, W: NodeWrapping<'src>> IndexMut<NodeId<'src>> for Tree<'src, W> {
         &mut self.nodes[index.idx]
     }
 }
-impl<'src, W: NodeWrapping<'src>> Tree<'src, W> {
+impl<'src, W: NodeWrapping<'src> + 'src> Tree<'src, W> {
     pub fn new() -> Self {
         Self {
             _marker: PhantomData::default(),

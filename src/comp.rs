@@ -23,6 +23,14 @@ impl<T, const MIN: usize> Vec<T, MIN> {
         self.0.last_mut().unwrap()
     }
     #[inline]
+    pub fn first(&self) -> &T {
+        self.0.first().unwrap()
+    }
+    #[inline]
+    pub fn first_mut(&mut self) -> &mut T {
+        self.0.first_mut().unwrap()
+    }
+    #[inline]
     pub fn penultimate(&self) -> Option<&T> {
         let len = self.0.len();
         if len >= MIN + 1 {
