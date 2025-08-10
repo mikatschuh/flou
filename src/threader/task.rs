@@ -1,9 +1,9 @@
 use super::files::*;
 use crate::{error::CliError, format_time, parser::parse};
-use colored::Colorize;
 use std::{
     ffi::OsString,
     fs::*,
+    io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     time::{Instant, UNIX_EPOCH},
 };
@@ -88,14 +88,17 @@ impl Task {
                 if path.file_name() != Some(&OsString::from("inter.flou")) {
                     return Ok(());
                 }
-                let text = read_to_string(path)?;
+                let mut file = OpenOptions::new().read(true).open(path)?;
+                let mut content = String::new();
+                file.read_to_string(&mut content)?;
+
                 let now = Instant::now();
-                let (ast, errors) = parse(&text, path);
+                let (ast, errors) = parse(&content, path);
                 println!(
                     "{}\n{}\n\nparsed in: {}",
                     *errors,
                     ast,
-                    format_time(now.elapsed().as_nanos()).bold(),
+                    format_time(now.elapsed().as_nanos()),
                 );
             }
         }

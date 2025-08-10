@@ -174,10 +174,6 @@ impl<'src> Tokenizer<'src> {
     }
 
     fn comment(&mut self) {
-        if let Some('!') = self.next_char() {
-            while let Some(..) = self.next_char() {}
-            return;
-        }
         while !matches!(self.next_char(), Some('\n')) {}
     }
 

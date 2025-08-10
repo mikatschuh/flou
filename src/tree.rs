@@ -267,7 +267,8 @@ impl<'src> NodeWrapping<'src> for NodeWrapper<'src> {
                         format!("_{string}\n{indentation}¯")
                     },
                 Chain { first, additions } => format!(
-                    "Chained  {}{}",
+                    "Chained [\n{}{}{}\n{}]",
+                    indentation.clone(),
                     first.get_wrapper(tree).display(
                         tree,
                         internalizer,
@@ -276,13 +277,12 @@ impl<'src> NodeWrapping<'src> for NodeWrapper<'src> {
                     additions
                         .iter()
                         .map(|item| {
+                            let op = item.0.as_str();
                             format!(
                                 "\n{}{}{}{}",
                                 indentation.clone(),
-                                item.0,
-                                (0..3 - item.0.to_string().chars().count())
-                                    .map(|_| " ")
-                                    .collect::<String>(),
+                                op,
+                                (0..3 - op.chars().count()).map(|_| " ").collect::<String>(),
                                 item.1.get_wrapper(tree).display(
                                     tree,
                                     internalizer,
@@ -291,6 +291,7 @@ impl<'src> NodeWrapping<'src> for NodeWrapper<'src> {
                             )
                         })
                         .collect::<String>(),
+                    indentation
                 ),
                 _ => todo!(),
             }

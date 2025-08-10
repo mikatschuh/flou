@@ -26,9 +26,9 @@ impl BinaryOp {
 
             Add | Sub => (24, 25),
 
-            Mul | Div | Mod => (26, 27),
+            Mul | Div | Mod | Dot | Cross => (26, 27),
             // Neg => 15
-            Dot | Cross | Power => (28, 29),
+            Power => (28, 27),
 
             Index | App => (33, 35),
         }

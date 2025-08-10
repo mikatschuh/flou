@@ -30,10 +30,12 @@ ___    __
 opensource
 */
 #[derive(Parser)]
-#[command(author = "mikatschuh", version = "0.1", about = ABOUT.clone(), long_about = None, name = "thyn")]
+#[command(author = "mikatschuh", version = "0.1", about = ABOUT.clone(), long_about = None, name = "flou")]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
+    #[arg(long)]
+    mute: bool,
 }
 
 #[derive(Subcommand)]
@@ -61,8 +63,8 @@ fn main() {
                     threadpool.launch(None);
                     threadpool.drop()
                 })() {
-                    println!("\n{}\n", e);
-                } else {
+                    println!("{e}");
+                } else if !parsed.mute {
                     summarize(now.elapsed().as_nanos(), "compiling", "no optimizations");
                 }
             }
