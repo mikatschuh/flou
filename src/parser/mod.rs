@@ -81,29 +81,22 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
     }
     #[inline]
     fn parse(mut self) -> (NodeId<'src>, Tree<'src, W>) {
-        (
-            self.parse_expr(0, InsideOfBrackets::False).unwrap(),
-            self.tree,
-        )
+        (self.parse_expr(0, false).unwrap(), self.tree)
     }
 
-    fn parse_expr(
-        &mut self,
-        min_bp: u8,
-        inside_of_brackets: InsideOfBrackets,
-    ) -> Option<NodeId<'src>> {
-        use InsideOfBrackets::*;
+    fn parse_expr(&mut self, min_bp: u8, inside_of_brackets: bool) -> Option<NodeId<'src>> {
         use TokenKind::*;
-        let token = self.tokenizer.next()?;
-        let mut lhs = match token.kind {
-            Ident => self.tree.add(W::new(
-                token.span,
-                Node::Ident(self.internalizer.get(token.src)),
-            )),
+        let mut lhs = match self.tokenizer.peek()?.kind {
+            Ident => {
+                let Token { span, src, .. } = self.tokenizer.next().unwrap();
+                self.tree
+                    .add(W::new(span, Node::Ident(self.internalizer.get(src))))
+            }
             Quote => {
-                let (string, confusions) = resolve_escape_sequences(token.src);
+                let Token { span, src, .. } = self.tokenizer.next().unwrap();
+                let (string, confusions) = resolve_escape_sequences(src);
                 self.tree.add(
-                    W::new(token.span, Node::Quote(string)).add_notes(
+                    W::new(span, Node::Quote(string)).add_notes(
                         confusions
                             .into_iter()
                             .map(|confusion| Note::EscapeSequenceConfusion(confusion))
@@ -112,20 +105,22 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
                 )
             }
             Open(own_bracket) => {
-                let content = self.parse_expr(0, BeforeComma)?; // lowest except for commas
-                self.handle_closed_bracket(content, token.span, own_bracket);
+                let Token { span, .. } = self.tokenizer.next().unwrap();
+                let content = self.parse_expr(0, true)?; // lowest except for commas
+                self.handle_closed_bracket(content, span, own_bracket);
                 content
             }
-            _ => match token.kind.as_prefix() {
+            Closed(..) => return None,
+            kind => match kind.as_prefix() {
                 Some(op) => {
-                    let operand = self.parse_expr(op.binding_pow(), False)?;
-                    self.tree
-                        .add(W::new(token.span, Node::Unary { op, operand }))
+                    let Token { span, .. } = self.tokenizer.next().unwrap();
+                    let operand = self.parse_expr(op.binding_pow(), inside_of_brackets)?;
+                    self.tree.add(W::new(span, Node::Unary { op, operand }))
                 }
-                _ => todo!(),
+                _ => return None,
             },
         };
-        while let Some(Token { kind, .. }) = self.tokenizer.peek() {
+        while let Some(Token { kind, span, .. }) = self.tokenizer.peek() {
             if let Closed(..) = kind {
                 return Some(lhs);
             } else if let Open(bracket) = *kind {
@@ -138,7 +133,7 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
                     return Some(lhs);
                 }
                 let Token { span, .. } = self.tokenizer.next()?;
-                let rhs = self.parse_expr(0, BeforeComma)?;
+                let rhs = self.parse_expr(0, true)?;
                 self.handle_closed_bracket(rhs, span, bracket);
                 lhs = self.tree.add(W::new(
                     span,
@@ -149,32 +144,27 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
                     },
                 ));
             } else if let Comma = *kind {
-                match inside_of_brackets {
-                    False => {
-                        if 6 < min_bp {
-                            return Some(lhs);
-                        }
-                        let Token { span, .. } = self.tokenizer.next()?;
-                        let rhs = self.parse_expr(7, False)?;
-                        let mut chain = comp::Vec::new([lhs, rhs]);
-                        while let Some(Token { kind: Comma, .. }) = self.tokenizer.peek() {
-                            _ = self.tokenizer.next();
-                            let rhs = self.parse_expr(7, False)?;
-                            chain.push(rhs)
-                        }
-                        // let span = chain.first().get_wrapper(&self.tree).span()
-                        //    - chain.last().get_wrapper(&self.tree).span();
-                        lhs = self.tree.add(W::new(span, Node::List(chain)))
-                    }
-                    BeforeComma => {}
-                    AfterComma => return Some(lhs),
+                let bp = if inside_of_brackets { (0, 1) } else { (15, 16) };
+                if bp.0 < min_bp {
+                    return Some(lhs);
                 }
+                let Token { span, .. } = self.tokenizer.next()?;
+                let rhs = self.parse_expr(bp.1, inside_of_brackets)?;
+                let mut chain = comp::Vec::new([lhs, rhs]);
+                while let Some(Token { kind: Comma, .. }) = self.tokenizer.peek() {
+                    _ = self.tokenizer.next();
+                    let rhs = self.parse_expr(bp.1, inside_of_brackets)?;
+                    chain.push(rhs)
+                }
+                // let span = chain.first().get_wrapper(&self.tree).span()
+                //    - chain.last().get_wrapper(&self.tree).span();
+                lhs = self.tree.add(W::new(span, Node::List(chain)))
             } else if let Some(op) = kind.as_infix() {
                 if op.binding_pow().0 < min_bp {
                     return Some(lhs);
                 }
                 let Token { span, .. } = self.tokenizer.next()?;
-                let rhs = self.parse_expr(op.binding_pow().1, False)?;
+                let rhs = self.parse_expr(op.binding_pow().1, inside_of_brackets)?;
                 if op.is_chained() {
                     let mut chain = comp::Vec::new([(op, rhs)]);
                     while let Some(op) = self.tokenizer.peek().and_then(|op| op.kind.as_infix()) {
@@ -183,7 +173,7 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
                         };
                         if op.is_chained() {
                             _ = self.tokenizer.next()?;
-                            let rhs = self.parse_expr(op.binding_pow().1, False)?;
+                            let rhs = self.parse_expr(op.binding_pow().1, inside_of_brackets)?;
                             chain.push((op, rhs));
                             continue;
                         }
@@ -215,7 +205,17 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
                     .tree
                     .add(W::new(span, Node::Unary { op, operand: lhs }));
             } else {
-                return Some(lhs);
+                let bp = (2, 3);
+                if bp.0 < min_bp {
+                    return Some(lhs);
+                }
+                let span = *span;
+                let rhs = self.parse_expr(bp.1, inside_of_brackets)?;
+                let mut chain = comp::Vec::new([lhs, rhs]);
+                while let Some(rhs) = self.parse_expr(bp.1, inside_of_brackets) {
+                    chain.push(rhs)
+                }
+                lhs = self.tree.add(W::new(span, Node::Statements(chain)));
             }
         }
         // EOF
@@ -257,10 +257,4 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
             );
         }
     }
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum InsideOfBrackets {
-    False,
-    BeforeComma,
-    AfterComma,
 }

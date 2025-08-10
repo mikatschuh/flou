@@ -4,32 +4,34 @@ impl BinaryOp {
     pub fn binding_pow(self) -> (u8, u8) {
         use BinaryOp::*;
         match self {
-            Equation => (2, 3),
+            // Inside of Brackets Comma => (0, 1)
+            // Statements => (2, 3)
+            Equation => (4, 5),
 
             Write | OrAssign | NorAssign | XorAssign | XnorAssign | AndAssign | NandAssign
             | AddAssign | SubAssign | MulAssign | DivAssign | ModAssign | DotAssign
-            | CrossAssign | PowerAssign | Swap => (4, 5),
+            | CrossAssign | PowerAssign | Swap => (10, 11),
 
-            // Comma => (6, 7)
-            Or | Nor => (8, 9),
-            Xor | Xnor => (10, 11),
-            And | Nand => (12, 13),
+            // Comma => (8, 7)
+            Or | Nor => (20, 21),
+            Xor | Xnor => (30, 31),
+            And | Nand => (40, 41),
 
-            Equal | NonEqual | Smaller | SmallerOrEqual | Greater | GreaterOrEqual => (14, 15),
+            Equal | NonEqual | Smaller | SmallerOrEqual | Greater | GreaterOrEqual => (50, 51),
 
-            BitShiftLeft | BitShiftRight => (16, 17),
+            BitShiftLeft | BitShiftRight => (60, 61),
 
-            BitOr | BitNor => (19, 20),
-            BitXor | BitXnor => (21, 22),
-            BitAnd | BitNand => (23, 24),
+            BitOr | BitNor => (70, 71),
+            BitXor | BitXnor => (80, 81),
+            BitAnd | BitNand => (90, 91),
 
-            Add | Sub => (25, 26),
+            Add | Sub => (100, 101),
 
-            Mul | Div | Mod | Dot | Cross => (26, 28),
+            Mul | Div | Mod | Dot | Cross => (110, 111),
             // Neg => 15
-            Power => (29, 30),
+            Power => (121, 120),
 
-            Index | App => (33, 34),
+            Index | App => (130, 131),
         }
     }
 }
@@ -37,13 +39,13 @@ impl UnaryOp {
     pub fn binding_pow(self) -> u8 {
         use UnaryOp::*;
         match self {
-            Neg => 28,
+            Neg => 115,
 
-            Ref | Deref | Not => 32,
+            Ref | Deref | Not => 125,
 
-            Increment | Decrement => 4,
+            Increment | Decrement => 10,
 
-            LfT => 34,
+            LfT => u8::MAX,
         }
     }
 }
