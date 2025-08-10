@@ -45,6 +45,16 @@ fn test() {
             Token::new(Span::at(18, 1, 18, 1), "+", Plus),
         ]
     );
+    assert_eq!(
+        Tokenizer::new("a + b //!\n c", errors.clone())
+            .into_iter()
+            .collect::<Vec<_>>(),
+        vec![
+            Token::new(Span::at(1, 1, 1, 1), "a", Ident),
+            Token::new(Span::at(3, 1, 3, 1), "+", Plus),
+            Token::new(Span::at(5, 1, 5, 1), "b", Ident),
+        ]
+    );
     /*let tokenizer = Tokenizer::new(EXAMPLE, errors);
     let tokens = tokenizer.clone().count() as f64;
     let mut count = 0;

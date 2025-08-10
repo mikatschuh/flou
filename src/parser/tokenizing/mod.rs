@@ -148,7 +148,7 @@ impl<'src> Tokenizer<'src> {
                 }
                 if let State::Op(ref mut token) = self.state {
                     if *token == TokenKind::Slash && c == '/' {
-                        self.comment(self.i - 1);
+                        self.comment();
 
                         self.state = State::Nothing;
                         continue;
@@ -173,15 +173,12 @@ impl<'src> Tokenizer<'src> {
         self.submit_current(self.span, self.next_i);
     }
 
-    fn comment(&mut self, _: usize) {
-        while let Some(c) = self.next_char() {
-            match c {
-                '\n' => {
-                    return;
-                }
-                _ => {}
-            }
+    fn comment(&mut self) {
+        if let Some('!') = self.next_char() {
+            while let Some(..) = self.next_char() {}
+            return;
         }
+        while !matches!(self.next_char(), Some('\n')) {}
     }
 
     fn quote(&mut self, start_i: usize) {
