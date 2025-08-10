@@ -1,5 +1,6 @@
 use std::{
     ops::{Index, IndexMut},
+    option::IntoIter,
     slice::Iter,
     vec,
 };
@@ -59,6 +60,30 @@ impl<'a, T, const MIN: usize> IntoIterator for &'a Vec<T, MIN> {
     type Item = &'a T;
     fn into_iter(self) -> Self::IntoIter {
         self.0.iter()
+    }
+}
+impl<'a, T: Clone, const MIN: usize> From<Iter<'a, T>> for Vec<T, MIN> {
+    fn from(value: Iter<T>) -> Self {
+        let mut vec = std::vec::Vec::new();
+        value.for_each(|value| vec.push(value.clone()));
+        assert!(vec.len() >= MIN);
+        Self(vec)
+    }
+}
+impl<T, const MIN: usize> From<IntoIter<T>> for Vec<T, MIN> {
+    fn from(value: IntoIter<T>) -> Self {
+        let mut vec = std::vec::Vec::new();
+        value.for_each(|value| vec.push(value));
+        assert!(vec.len() >= MIN);
+        Self(vec)
+    }
+}
+impl<T, const MIN: usize> FromIterator<T> for Vec<T, MIN> {
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        let mut vec = std::vec::Vec::new();
+        iter.into_iter().for_each(|value| vec.push(value));
+        assert!(vec.len() >= MIN);
+        Self(vec)
     }
 }
 impl<T, const MIN: usize> From<Vec<T, MIN>> for vec::Vec<T> {

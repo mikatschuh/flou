@@ -1,7 +1,3 @@
-pub trait BindingPow {
-    fn binding_pow(self) -> i8;
-}
-
 #[derive(Clone, PartialEq, Debug, Copy)]
 pub enum BinaryOp {
     Equation, // a = b
@@ -22,6 +18,10 @@ pub enum BinaryOp {
     DivAssign, // a /= b
     ModAssign, // a %= b
 
+    DotAssign,   // a ·= b
+    CrossAssign, // a ><= b
+    PowerAssign, // a ^= b
+
     Swap, // a =|= b
 
     Or,   // a || b
@@ -30,6 +30,16 @@ pub enum BinaryOp {
     Xnor, // a !>|| b
     And,  // a && b
     Nand, // a !&& b
+
+    Equal,          // a == b
+    NonEqual,       // a != b
+    Smaller,        // a < b
+    GreaterOrEqual, // a >= b
+    Greater,        // a > b
+    SmallerOrEqual, // a <= b
+
+    BitShiftLeft,  // a << b
+    BitShiftRight, // a >> b
 
     BitOr,   // a | b
     BitNor,  // a !| b
@@ -59,36 +69,6 @@ impl fmt::Display for BinaryOp {
     }
 }
 use BinaryOp::*;
-impl BindingPow for BinaryOp {
-    fn binding_pow(self) -> i8 {
-        match self {
-            Equation => 1, // a = b
-
-            Write | OrAssign | NorAssign | XorAssign | XnorAssign | AndAssign | NandAssign
-            | AddAssign | SubAssign | MulAssign | DivAssign | ModAssign | Swap => 2,
-
-            // Comma => 3
-            Or | Nor => 4,
-            Xor | Xnor => 5,
-            And | Nand => 6,
-
-            // Smaller / Greater / SmallerOrEqual / GreaterOrEqual => 4.1
-            // Equal / NotEqual => 4.2
-            BitOr | BitNor => 8,
-            BitXor | BitXnor => 9,
-            BitAnd | BitNand => 10,
-
-            Add | Sub => 11,
-
-            Mul | Div | Mod => 12,
-            // Neg => 13
-            // Pos => 13
-            Dot | Cross | Power => 14,
-
-            Index | App => 19,
-        }
-    }
-}
 impl BinaryOp {
     pub fn as_str(self) -> &'static str {
         match self {
@@ -110,6 +90,10 @@ impl BinaryOp {
             DivAssign => "/=",
             ModAssign => "%=",
 
+            DotAssign => "·=",
+            CrossAssign => "><=",
+            PowerAssign => "^=",
+
             Swap => "=|=",
 
             Or => "||",
@@ -118,6 +102,16 @@ impl BinaryOp {
             Xnor => "!>||",
             And => "&&",
             Nand => "!&&",
+
+            Equal => "==",
+            NonEqual => "!=",
+            Smaller => "<",
+            GreaterOrEqual => ">=",
+            Greater => ">",
+            SmallerOrEqual => "<=",
+
+            BitShiftLeft => "<<",
+            BitShiftRight => ">>",
 
             BitOr => "|",
             BitNor => "!|",
@@ -139,6 +133,18 @@ impl BinaryOp {
 
             Index => "index",
             App => "app",
+        }
+    }
+
+    pub fn is_chained(self) -> bool {
+        match self {
+            Equal => true,
+            NonEqual => true,
+            Smaller => true,
+            SmallerOrEqual => true,
+            Greater => true,
+            GreaterOrEqual => true,
+            _ => false,
         }
     }
 }

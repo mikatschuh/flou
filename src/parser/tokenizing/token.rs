@@ -2,7 +2,10 @@ use std::fmt::Display;
 
 use colored::{ColoredString, Colorize};
 
-use crate::{error::Span, parser::unary_op::UnaryOp};
+use crate::{
+    error::Span,
+    parser::{binary_op::BinaryOp, unary_op::UnaryOp},
+};
 
 #[derive(PartialEq, Debug, Clone, Eq)]
 pub struct Token<'src> {
@@ -35,12 +38,12 @@ pub enum TokenKind {
     NotRightEqual, // !>=
     RightArrow,    // ->
 
-    Plus,       // +
-    PlusPlus,   // ++
-    PlusEqual,  // +=
-    Minus,      // -
-    MinusMinus, // --
-    MinusEqual, // -=
+    Plus,      // +
+    PlusPlus,  // ++
+    PlusEqual, // +=
+    Dash,      // -
+    DashDash,  // --
+    DashEqual, // -=
 
     Star,         // *
     StarEqual,    // *=
@@ -128,9 +131,9 @@ impl Display for Token<'_> {
                 Plus => "+",
                 PlusPlus => "++",
                 PlusEqual => "+=",
-                Minus => "-",
-                MinusMinus => "--",
-                MinusEqual => "-=",
+                Dash => "-",
+                DashDash => "--",
+                DashEqual => "-=",
 
                 Star => "*",
                 StarEqual => "*=",
@@ -205,7 +208,7 @@ impl TokenKind {
             '\'' => Some(Tick),
             '=' => Some(Equal),
             '+' => Some(Plus),
-            '-' => Some(Minus),
+            '-' => Some(Dash),
             '*' => Some(Star),
             '/' => Some(Slash),
             '%' => Some(Percent),
@@ -257,9 +260,9 @@ impl TokenKind {
                 '=' => Some(PlusEqual),
                 _ => None,
             },
-            Minus => match c {
-                '-' => Some(MinusMinus),
-                '=' => Some(MinusEqual),
+            Dash => match c {
+                '-' => Some(DashDash),
+                '=' => Some(DashEqual),
                 '>' => Some(RightArrow),
                 _ => None,
             },
@@ -358,7 +361,7 @@ impl TokenKind {
                 self,
                 Equal
                     | PlusEqual
-                    | MinusEqual
+                    | DashEqual
                     | StarEqual
                     | SlashEqual
                     | PercentEqual
@@ -382,7 +385,7 @@ impl TokenKind {
             ),
             '>' => matches!(self, RightArrow | Right | RightRight | NotRight),
             '+' => matches!(self, Plus | PlusPlus),
-            '-' => matches!(self, Minus | MinusMinus | LeftArrow),
+            '-' => matches!(self, Dash | DashDash | LeftArrow),
             '*' => self == Star,
             '/' => self == Slash,
             '%' => self == Percent,
@@ -412,14 +415,92 @@ impl TokenKind {
             _ => false,
         }
     }
+
     pub fn as_prefix(self) -> Option<UnaryOp> {
         use UnaryOp::*;
         match self {
             Self::Not => Some(Not),
             Tick => Some(LfT),
             RightArrow => Some(Ref),
-            Minus => Some(Neg),
+            Dash => Some(Neg),
             Star => Some(Deref),
+            _ => None,
+        }
+    }
+
+    pub fn as_infix(self) -> Option<BinaryOp> {
+        use BinaryOp::*;
+        match self {
+            Self::Equal => Some(Equation),
+
+            EqualEqual => Some(Equal),
+            NotEqual => Some(NonEqual),
+
+            Left => Some(Smaller),
+            LeftLeft => Some(BitShiftLeft),
+            NotLeft => Some(GreaterOrEqual),
+            LeftEqual => Some(SmallerOrEqual),
+            NotLeftEqual => Some(Greater),
+
+            Right => Some(Greater),
+            RightRight => Some(BitShiftRight),
+            NotRight => Some(SmallerOrEqual),
+            RightEqual => Some(GreaterOrEqual),
+            NotRightEqual => Some(Smaller),
+
+            Plus => Some(Add),
+            PlusEqual => Some(AddAssign),
+            Dash => Some(Sub),
+            DashEqual => Some(SubAssign),
+
+            Star => Some(Mul),
+            StarEqual => Some(MulAssign),
+            Slash => Some(Div),
+            SlashEqual => Some(DivAssign),
+            Percent => Some(Mod),
+            PercentEqual => Some(ModAssign),
+
+            Self::Dot => Some(Dot),
+            DotEqual => Some(DotAssign),
+            Self::Cross => Some(Cross),
+            CrossEqual => Some(CrossAssign),
+            Up => Some(Power),
+            UpEqual => Some(PowerAssign),
+
+            Pipe => Some(BitOr),
+            PipePipe => Some(Or),
+            NotPipe => Some(BitNor),
+            NotPipePipe => Some(Nor),
+            PipeEqual => Some(OrAssign),
+            NotPipeEqual => Some(NorAssign),
+
+            RightPipe => Some(BitOr),
+            RightPipePipe => Some(Xor),
+            NotRightPipe => Some(BitXnor),
+            NotRightPipePipe => Some(Xnor),
+            RightPipeEqual => Some(XorAssign),
+            NotRightPipeEqual => Some(XnorAssign),
+
+            Self::And => Some(BitAnd),
+            AndAnd => Some(And),
+            NotAnd => Some(BitNand),
+            NotAndAnd => Some(Nand),
+            AndEqual => Some(AndAssign),
+            NotAndEqual => Some(NandAssign),
+
+            ColonEqual => Some(Write),
+            SwapSign => Some(Swap),
+
+            _ => None,
+        }
+    }
+
+    pub fn as_postfix(self) -> Option<UnaryOp> {
+        use UnaryOp::*;
+        match self {
+            LeftArrow => Some(Ref),
+            PlusPlus => Some(Increment),
+            DashDash => Some(Decrement),
             _ => None,
         }
     }

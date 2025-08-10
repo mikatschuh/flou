@@ -1,9 +1,9 @@
 //! Benchmarking module of the flou compiler
 
-use std::time::Instant;
-
+#[cfg(test)]
 /// Benchmarks a given function - and returns the average time of execution
-pub fn bench(func: impl Fn()) -> f64 {
+pub fn bench(mut func: impl FnMut()) -> f64 {
+    use std::time::Instant;
     let now = Instant::now();
     func();
     let time = now.elapsed().as_nanos();

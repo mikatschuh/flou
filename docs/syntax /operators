@@ -6,10 +6,10 @@ In Thyn they combine two, less or more identifiers and act one them. These are a
 The operators with the lowest binding power come first, then it gets higher and higher:
 
 
-1 Equation Operator:
+Equation Operator:
     a = b       Definition
 
-2 Mutations:                                      | overloadable
+Mutations:                                      | overloadable
     a := b      Writing
 
     a |= b      OR-Assign
@@ -25,16 +25,21 @@ The operators with the lowest binding power come first, then it gets higher and 
 
     a =|= b     Swapping
 
-3 Comma Operator:
+    a++         Incrementation
+    a--         Decrementation
+
+Comma Operator:
+
     a, b        Combining values into a list.
 
-4 Logical Operators (lazy):
-    4   a || b  Or
-    5   a >|| b Xor
-    6   a && b  And
+Logical Operators (lazy):
+
+    a || b  Or
+    a >|| b Xor
+    a && b  And
 
 
-7 Comparison Operators (can be chained):
+Comparison Operators (can be chained):
 
     a == b      Equality
     a != b      Inequality
@@ -44,44 +49,46 @@ The operators with the lowest binding power come first, then it gets higher and 
     a >= b      Greater of Equal
 
 
-8 Mathematical/Binary Operators:                  | overloadable
+Mathematical/Binary Operators:                  | overloadable
 
-    8   a | b   Bitwise OR
-    9   a >| b  Bitwise XOR
-    10  a & b   Bitwise AND
+    a <<    Bitshift left
+    a >>    Bitshift right
 
-    11  a + b    Addition
-        a - b    Subtraction
+    a | b   Bitwise OR
+    a >| b  Bitwise XOR
+    a & b   Bitwise AND
 
-    12  a * b    Multiplication
-        a / b    Division
-        a % b    Euclidic Modulo: -10 % 3 = 2; 10 % -3 = -2
+    a + b    Addition
+    a - b    Subtraction
 
-    13  -a       Negation
+    a * b    Multiplication
+    a / b    Division
+    a % b    Euclidic Modulo: -10 % 3 = 2; 10 % -3 = -2
 
-    14  User Defined Operators get defaulted here, for instance:
-        · (dot-product),
-        >< (cross-product),
-        ^ (power)
+    -a       Negation
 
-15 Pipe Operator:
+    User Defined Operators get defaulted here, for instance:
 
-    15  a |> b   Piping
+    · (dot-product),
+    >< (cross-product),
+    ^ (power)
+
+Pipe Operator:
+
+    a |> b   Piping
                  note: The precendence can be ignored while writing patterns.
-    16  a <| b
+    a <| b
 
-17 Postfix Unary Mutations:                        | overloadable
-    a++         Incrementation
-    a--         Decrementation
-
-18 Prefix Unary Operators:                         | overloadable
+Prefix Unary Operators:                         | overloadable
     !a          Invertion (bitwise & logical)
-    -> a        Referencing
+    -> a
+    a <-        Referencing
     *a          Dereferencing
 
-19 Application:
+Application:
+
     a(b)        Calling
     a[b]        Indexing
 
-20 Lifetime:
+Lifetime:
     'a          Lifetiming

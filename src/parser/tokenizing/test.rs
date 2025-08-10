@@ -45,12 +45,17 @@ fn test() {
             Token::new(Span::at(18, 1, 18, 1), "+", Plus),
         ]
     );
-    let tokenizer = Tokenizer::new(EXAMPLE, errors);
+    /*let tokenizer = Tokenizer::new(EXAMPLE, errors);
     let tokens = tokenizer.clone().count() as f64;
+    let mut count = 0;
     println!(
         "tok/s = {}",
-        tokens / bench(|| _ = tokenizer.clone().into_iter().collect::<Vec<_>>())
+        tokens
+            / bench(|| {
+                count += tokenizer.clone().count();
+            })
     );
+    println!("total number of processed tokens: {count}");*/
 }
 const EXAMPLE: &str = "time.now() Instant
 time.since(Instant) f64

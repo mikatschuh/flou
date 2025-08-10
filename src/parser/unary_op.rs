@@ -1,7 +1,5 @@
 use std::fmt;
 
-use crate::parser::binary_op::BindingPow;
-
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum UnaryOp {
     // infront of one argument // unary - prefix - ops
@@ -17,10 +15,9 @@ pub enum UnaryOp {
     Increment, // a++
     Decrement, // b--
 }
-
+use UnaryOp::*;
 impl fmt::Display for UnaryOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use UnaryOp::*;
         let string = match self {
             Ref => "->",
             Deref => "*",
@@ -39,23 +36,6 @@ impl fmt::Display for UnaryOp {
 
 impl UnaryOp {
     pub(in crate::parser) fn is_postfix(self) -> bool {
-        matches!(self, Self::Decrement | Self::Increment)
-    }
-}
-impl BindingPow for UnaryOp {
-    fn binding_pow(self) -> i8 {
-        use UnaryOp::*;
-        match self {
-            Neg => 13,
-
-            Ref => 18,
-            Deref => 18,
-            Not => 18,
-
-            Increment => 17,
-            Decrement => 17,
-
-            LfT => 20,
-        }
+        matches!(self, Decrement | Increment)
     }
 }

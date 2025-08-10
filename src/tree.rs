@@ -5,7 +5,6 @@ use crate::{
     error::Span,
     parser::{
         binary_op::BinaryOp,
-        chained_op::ChainedOp,
         intern::{Internalizer, Symbol},
         tokenizing::{with_written_out_escape_sequences, EscapeSequenceConfusion},
         unary_op::UnaryOp,
@@ -14,7 +13,7 @@ use crate::{
 };
 // use colored::Colorize;
 use std::{
-    fmt::{Debug, Display},
+    fmt::Debug,
     marker::PhantomData,
     ops::{Index, IndexMut},
     vec,
@@ -109,7 +108,7 @@ impl<'src> NodeWrapping<'src> for NodeWrapper<'src> {
                 } => format!("{val} {}", if *imaginary_coefficient { "i" } else { "()" }),
                 Ident(id) => format!("Id  {}", internalizer.resolve(*id)),
                 Quote(quote) => format!("Quote  \"{}\"", with_written_out_escape_sequences(&quote)),
-                BinaryOp { op, left, right } => format!(
+                Binary { op, left, right } => format!(
                     "{op} {{\n{}{}\n{}{} \n{}}}",
                     next_indentation.clone(),
                     left.get_wrapper(tree)
@@ -120,7 +119,7 @@ impl<'src> NodeWrapping<'src> for NodeWrapper<'src> {
                         .display(tree, internalizer, next_indentation),
                     indentation
                 ),
-                UnaryOp { op, operand } => format!(
+                Unary { op, operand } => format!(
                     "{op} {}",
                     operand.get_wrapper(tree).display(
                         tree,
@@ -267,7 +266,7 @@ impl<'src> NodeWrapping<'src> for NodeWrapper<'src> {
                         }
                         format!("_{string}\n{indentation}¯")
                     },
-                ChainedOp { first, additions } => format!(
+                Chain { first, additions } => format!(
                     "Chained  {}{}",
                     first.get_wrapper(tree).display(
                         tree,
@@ -304,25 +303,12 @@ pub enum Note {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Path<'src> {
-    pub content: NodeId<'src>,
+pub struct Path<Pointer: Clone + Debug + PartialEq> {
+    pub content: Pointer,
 }
-impl<'src> Path<'src> {
-    pub fn new(content: NodeId<'src>) -> Self {
+impl<Pointer: Clone + Debug + PartialEq> Path<Pointer> {
+    pub fn new(content: Pointer) -> Self {
         Self { content }
-    }
-    pub fn display<'tree>(
-        &self,
-        tree: &'src Tree<'src, impl NodeWrapping<'src>>,
-        internalizer: &Internalizer<'src>,
-        indentation: String,
-    ) -> String {
-        format!(
-            "{}",
-            self.content
-                .get_wrapper(tree)
-                .display(tree, internalizer, indentation)
-        )
     }
 }
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -347,14 +333,15 @@ impl Bracket {
         }
     }
 }
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Node<'src> {
     // control flow structures
     Conditional {
         condition: NodeId<'src>,
         looping: bool,
-        then_body: Path<'src>,
-        else_body: Option<Path<'src>>,
+        then_body: Path<NodeId<'src>>,
+        else_body: Option<Path<NodeId<'src>>>,
     }, // if/loop condition then_body (else else_body)
     // single values
     Literal {
@@ -373,16 +360,16 @@ pub enum Node<'src> {
     Statements(comp::Vec<NodeId<'src>, 2>),
 
     // operations
-    BinaryOp {
+    Binary {
         op: BinaryOp,
         left: NodeId<'src>,
         right: NodeId<'src>,
     }, // left op right
-    ChainedOp {
+    Chain {
         first: NodeId<'src>,
-        additions: comp::Vec<(ChainedOp, NodeId<'src>), 1>,
+        additions: comp::Vec<(BinaryOp, NodeId<'src>), 1>,
     }, // first op additions[0].0 additions[0].1
-    UnaryOp {
+    Unary {
         op: UnaryOp,
         operand: NodeId<'src>,
     }, // op operand
@@ -390,6 +377,124 @@ pub enum Node<'src> {
         kind: Bracket,
         content: NodeId<'src>,
     }, // squared content squared
+}
+#[derive(Debug, Clone, PartialEq)]
+pub enum HeapNode<'src> {
+    // control flow structures
+    Conditional {
+        condition: Box<HeapNode<'src>>,
+        looping: bool,
+        then_body: Path<Box<HeapNode<'src>>>,
+        else_body: Option<Path<Box<HeapNode<'src>>>>,
+    }, // if/loop condition then_body (else else_body)
+    // single values
+    Literal {
+        val: BigUint,
+        imaginary_coefficient: bool,
+    }, // (0(b/s/o/d/x))N(.N)((u/i/f/c)(0(b/s/o/d/x))N)(i)
+    Quote(String), // "..."
+
+    // identifiers
+    Ident(Symbol<'src>),       // x
+    PrimitiveType(Type<'src>), // u32, i32, c32, f32, ...
+
+    // multiple values
+    List(comp::Vec<Box<HeapNode<'src>>, 2>), // a, b, c, d, ...
+    ColonStruct(comp::Vec<Box<HeapNode<'src>>, 2>), // a : b : c : d
+    Statements(comp::Vec<Box<HeapNode<'src>>, 2>),
+
+    // operations
+    Binary {
+        op: BinaryOp,
+        left: Box<HeapNode<'src>>,
+        right: Box<HeapNode<'src>>,
+    }, // left op right
+    Chain {
+        first: Box<HeapNode<'src>>,
+        additions: comp::Vec<(BinaryOp, Box<HeapNode<'src>>), 1>,
+    }, // first op additions[0].0 additions[0].1
+    Unary {
+        op: UnaryOp,
+        operand: Box<HeapNode<'src>>,
+    }, // op operand
+    Brackets {
+        kind: Bracket,
+        content: Box<HeapNode<'src>>,
+    }, // squared content squared
+}
+impl<'src> Node<'src> {
+    fn as_heap<W: NodeWrapping<'src>>(&self, tree: &'src Tree<'src, W>) -> HeapNode<'src> {
+        fn boxed<'src, W: NodeWrapping<'src>>(
+            node: &NodeId<'src>,
+            tree: &'src Tree<'src, W>,
+        ) -> Box<HeapNode<'src>> {
+            Box::new(node.get(tree).as_heap(tree))
+        }
+        use HeapNode::*;
+        match self {
+            Self::Conditional {
+                condition,
+                looping,
+                then_body,
+                else_body,
+            } => Conditional {
+                condition: boxed(condition, tree),
+                looping: *looping,
+                then_body: Path::new(boxed(&then_body.content, tree)),
+                else_body: else_body
+                    .clone()
+                    .and_then(|else_body| Some(Path::new(boxed(&else_body.content, tree)))),
+            },
+            Self::Literal {
+                val,
+                imaginary_coefficient,
+            } => Literal {
+                val: val.clone(),
+                imaginary_coefficient: *imaginary_coefficient,
+            },
+            Self::Quote(string) => Quote(string.clone()),
+            Self::Ident(symbol) => Ident(*symbol),
+            Self::PrimitiveType(kind) => PrimitiveType(*kind),
+            Self::List(content) => List(
+                content
+                    .into_iter()
+                    .map(|val| boxed(val, tree))
+                    .collect::<comp::Vec<_, 2>>(),
+            ),
+            Self::ColonStruct(content) => ColonStruct(
+                content
+                    .into_iter()
+                    .map(|val| boxed(val, tree))
+                    .collect::<comp::Vec<_, 2>>(),
+            ),
+            Self::Statements(content) => Statements(
+                content
+                    .into_iter()
+                    .map(|val| boxed(val, tree))
+                    .collect::<comp::Vec<_, 2>>(),
+            ),
+            Self::Binary { op, left, right } => Binary {
+                op: *op,
+                left: boxed(left, tree),
+                right: boxed(right, tree),
+            },
+            Self::Chain { first, additions } => Chain {
+                first: boxed(first, tree),
+                additions: additions
+                    .into_iter()
+                    .map(|item| (item.0, boxed(&item.1, tree)))
+                    .collect(),
+            },
+            Self::Unary { op, operand } => Unary {
+                op: *op,
+                operand: boxed(operand, tree),
+            },
+            Self::Brackets { kind, content } => Brackets {
+                kind: *kind,
+                content: boxed(content, tree),
+            },
+        }
+    }
 }
 /*
 impl Node {
@@ -467,7 +572,7 @@ pub fn to_rust_code<W: Clone + Debug + Unwrapable>(v: &Vec<W>, indentation: Stri
         v.iter()
             .map(|n| n.unwrap().as_code(indentation.clone()))
             .collect::<Vec<String>>()
-            .join(", ")
+            .join(", "),
     )
 }*/
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -517,7 +622,6 @@ impl<'tree> NodeId<'tree> {
 #[derive(Clone, Debug)]
 pub struct Tree<'src, W: NodeWrapping<'src>> {
     _marker: PhantomData<&'src ()>,
-    pub root: NodeId<'src>,
     nodes: Vec<W>,
 }
 impl<'src, Wrapper: NodeWrapping<'src>> Index<NodeId<'src>> for Tree<'src, Wrapper> {
@@ -535,30 +639,24 @@ impl<'src, W: NodeWrapping<'src>> Tree<'src, W> {
     pub fn new() -> Self {
         Self {
             _marker: PhantomData::default(),
-            root: NodeId::new(0),
             nodes: vec![],
         }
     }
-    pub fn add(&mut self, node: W) -> NodeId {
+    pub fn add(&mut self, node: W) -> NodeId<'src> {
         self.nodes.push(node);
         NodeId::new(self.nodes.len() - 1)
     }
-    pub fn add_root(&mut self, node: W) -> NodeId {
-        self.nodes.push(node);
-        NodeId::new(self.nodes.len() - 1)
-    }
-    pub fn move_to_new_location(&mut self, node: NodeId<'src>) -> NodeId {
+    pub fn move_to_new_location(&mut self, node: NodeId<'src>) -> NodeId<'src> {
         self.add(self[node].clone())
+    }
+
+    pub fn build_graph(&'src self, root: NodeId<'src>) -> Box<HeapNode<'src>> {
+        Box::new(self[root].node().as_heap(self))
     }
 }
 
 impl<'src, W: NodeWrapping<'src>> Tree<'src, W> {
-    pub fn to_string(&'src self, internalizer: &Internalizer<'src>) -> String {
-        format!(
-            "{}",
-            self.root
-                .get_wrapper(self)
-                .display(self, internalizer, String::new())
-        )
+    pub fn to_string(&'src self, root: NodeId<'src>, internalizer: &Internalizer<'src>) -> String {
+        format!("{}", self[root].display(self, internalizer, String::new()))
     }
 }
