@@ -232,27 +232,26 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
         {
             let span = self.tokenizer.next().unwrap().span;
             *self.tree[content].span_mut() = own_span - span;
-        } else if matches!(
-            self.tokenizer.peek(),
-            Some(Token {
-                kind: Closed(..),
-                ..
-            })
-        ) {
+        } else if let Some(Token {
+            kind: Closed(found),
+            ..
+        }) = self.tokenizer.peek()
+        {
+            let found = *found;
             let span = self.tokenizer.next().unwrap().span;
             *self.tree[content].span_mut() = own_span - span;
             self.errors.push(
                 own_span - span,
                 ErrorCode::WrongClosedBracket {
-                    expected: Bracket::Round,
-                    found: Bracket::Squared,
+                    expected: own_bracket,
+                    found: found,
                 },
             );
         } else {
             self.errors.push(
                 own_span,
                 ErrorCode::NoClosedBracket {
-                    opened: Bracket::Round,
+                    opened: own_bracket,
                 },
             );
         }
