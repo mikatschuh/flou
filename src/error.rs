@@ -69,8 +69,12 @@ pub enum ErrorCode<'src> {
         right: Option<Token<'src>>,
     },
     // control structure mistakes
-    ElseWithNoIf,
+    LonelyElse,
     SecondElse,
+    JumpInsideFuncArg {
+        keyword: &'src str,
+    },
+
     // bracket errors
     NoOpenedBracket {
         closed: Bracket,
@@ -268,16 +272,22 @@ impl Error<'_> {
                         unreachable!()
                     }
                 }
-                ElseWithNoIf => {
+                LonelyElse => {
                     format_error!(
                         self.section.to_string(path),
-                        "the else - keyword has been used without an if - block infront of it",
-                        "you've to add the if block"
+                        "the else - keyword has been used without an if / loop - block infront of it",
+                        "you've to add the if / loop block"
                     )
                 }
                 SecondElse => {
                     format_error!(self.section.to_string(path), "there was a second else")
                 }
+                JumpInsideFuncArg { keyword } => format_error!(
+                    self.section.to_string(path),
+                    "there was a {} - jump inside of a function arguments type",
+                    [keyword],
+                    "you have to remove the jump, because there is no location to jump to"
+                ),
                 NoOpenedBracket { closed } => {
                     format_error!(
                         self.section.to_string(path),
@@ -289,7 +299,7 @@ impl Error<'_> {
                     format_error!(
                         self.section.to_string(path),
                         "there was a opened bracket {} but no closed one",
-                        [opened.display_closed()]
+                        [opened.display_open()]
                     )
                 }
                 WrongClosedBracket { expected, found } => {

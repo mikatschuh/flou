@@ -29,12 +29,18 @@ impl Keyword {
         use Keyword::*;
         match string {
             "loop" => Some(Loop),
+            "wiederhole" => Some(Loop),
             "if" => Some(If),
+            "wenn" => Some(If),
             "else" => Some(Else),
+            "sonst" => Some(Else),
             "continue" => Some(Continue),
+            "nächste" => Some(Continue),
             "break" => Some(Break),
             "exit" => Some(Exit),
+            "verlasse" => Some(Exit),
             "return" => Some(Return),
+            "zurückgeben" => Some(Return),
             _ => None,
         }
     }

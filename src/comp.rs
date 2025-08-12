@@ -5,7 +5,7 @@ use std::{
     vec,
 };
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Vec<T, const MIN: usize>(vec::Vec<T>);
 
 impl<T, const MIN: usize> Vec<T, MIN> {

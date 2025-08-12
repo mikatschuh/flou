@@ -6,7 +6,8 @@ impl BinaryOp {
         match self {
             // Inside of Brackets Comma => (0, 1)
             // Statements => (2, 3)
-            Equation => (4, 5),
+            // Colon Statements => (4, 5)
+            Equation => (6, 7),
 
             Write | OrAssign | NorAssign | XorAssign | XnorAssign | AndAssign | NandAssign
             | AddAssign | SubAssign | MulAssign | DivAssign | ModAssign | DotAssign

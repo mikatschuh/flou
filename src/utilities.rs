@@ -1,7 +1,9 @@
 use std::alloc::{alloc, dealloc, Layout};
+use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::ops::{Deref, DerefMut, Index, IndexMut};
 use std::ptr::NonNull;
+use std::slice::Iter;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 // Die innere Struktur, die gezählt wird
@@ -273,16 +275,43 @@ impl<T, const CAP: usize, const CAP_LOG_2: usize> IndexMut<usize>
     }
 }
 
-#[macro_export]
-macro_rules! pop_as_long_as {
-    ($arr:expr => $pattern:pat => $code:expr) => {
-        while let Some($pattern) = $arr.last() {
-            if let $pattern = $arr.pop().unwrap() {
-                $code
-            }
-        }
-    };
+#[derive(PartialEq, Eq)]
+pub struct Ref<'recv, T> {
+    _marker: PhantomData<&'recv ()>,
+    ptr: NonNull<T>,
 }
+
+impl<'recv, T> Clone for Ref<'recv, T> {
+    fn clone(&self) -> Self {
+        Self {
+            _marker: PhantomData::default(),
+            ptr: self.ptr,
+        }
+    }
+}
+impl<'recv, T> Copy for Ref<'recv, T> {}
+impl<'recv, T: Debug> Debug for Ref<'recv, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        unsafe { write!(f, "{:?}", *self.ptr.as_ptr()) }
+    }
+}
+
+impl<'recv, T> Ref<'recv, T> {
+    #[inline]
+    pub fn new(val: &'recv mut T) -> Self {
+        Self {
+            _marker: PhantomData::default(),
+            ptr: unsafe { NonNull::new_unchecked(val as *mut T) },
+        }
+    }
+
+    pub fn write(self, val: T) {
+        unsafe {
+            *self.ptr.as_ptr() = val;
+        }
+    }
+}
+
 #[test]
 fn test() {
     let mut queue: ArrayQueue<i32, 16, 4> = ArrayQueue::new();

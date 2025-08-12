@@ -31,3 +31,9 @@ Slice[T] : Copy : {
     .len ux,
     .ptr -> (.len * T)
 }
+
+On placeholders:
+
+.. will be used throughout the language. _ has no special meaning. ".." can also be used to drop:
+
+.. = x

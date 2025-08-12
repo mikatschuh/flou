@@ -14,6 +14,7 @@ use crate::{
 // use colored::Colorize;
 use std::{
     fmt::Debug,
+    hash::BuildHasherDefault,
     marker::PhantomData,
     ops::{Index, IndexMut},
     vec,
@@ -107,6 +108,7 @@ impl<'src> NodeWrapping<'src> for NodeWrapper<'src> {
                     imaginary_coefficient,
                 } => format!("{val} {}", if *imaginary_coefficient { "i" } else { "()" }),
                 Ident(id) => format!("Id  {}", internalizer.resolve(*id)),
+                Placeholder => "..".to_owned(),
                 Quote(quote) => format!("Quote  \"{}\"", with_written_out_escape_sequences(&quote)),
                 Binary { op, left, right } => format!(
                     "{op} {{\n{}{}\n{}{} \n{}}}",
@@ -268,11 +270,11 @@ impl<'src> NodeWrapping<'src> for NodeWrapper<'src> {
                     },
                 Chain { first, additions } => format!(
                     "Chained [\n{}{}{}\n{}]",
-                    indentation.clone(),
+                    next_indentation.clone(),
                     first.get_wrapper(tree).display(
                         tree,
                         internalizer,
-                        indentation.clone() + "   "
+                        next_indentation.clone() + "   "
                     ),
                     additions
                         .iter()
@@ -280,18 +282,41 @@ impl<'src> NodeWrapping<'src> for NodeWrapper<'src> {
                             let op = item.0.as_str();
                             format!(
                                 "\n{}{}{}{}",
-                                indentation.clone(),
+                                next_indentation.clone(),
                                 op,
                                 (0..3 - op.chars().count()).map(|_| " ").collect::<String>(),
                                 item.1.get_wrapper(tree).display(
                                     tree,
                                     internalizer,
-                                    indentation.clone() + "   "
+                                    next_indentation.clone() + "   "
                                 )
                             )
                         })
                         .collect::<String>(),
                     indentation
+                ),
+                Conditional {
+                    condition,
+                    looping,
+                    then_body,
+                    else_body,
+                } => format!(
+                    "{} {}\n{}=> {}{}",
+                    if *looping { "loop" } else { "if" },
+                    condition.get_wrapper(tree).display(
+                        tree,
+                        internalizer,
+                        indentation.clone() + "   "
+                    ),
+                    indentation.clone(),
+                    then_body.display(tree, internalizer, indentation.clone() + "   "),
+                    else_body
+                        .as_ref()
+                        .map_or("".to_owned(), |else_body| format!(
+                            "\n{}else {}",
+                            indentation.clone(),
+                            &else_body.display(tree, internalizer, indentation + "     "),
+                        ))
                 ),
                 _ => todo!(),
             }
@@ -303,13 +328,95 @@ pub enum Note {
     EscapeSequenceConfusion(EscapeSequenceConfusion),
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Path<Pointer: Clone + Debug + PartialEq> {
-    pub content: Pointer,
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Jump<P: Clone + Debug + PartialEq + Eq> {
+    Continue { layers: usize },
+    Exit { layers: usize, val: Path<P> },
+    Return { val: Path<P> },
 }
-impl<Pointer: Clone + Debug + PartialEq> Path<Pointer> {
-    pub fn new(content: Pointer) -> Self {
-        Self { content }
+
+impl<'src> Jump<NodeId<'src>> {
+    fn as_heap<W: NodeWrapping<'src>>(
+        &'src self,
+        tree: &'src Tree<'src, W>,
+    ) -> Jump<Box<HeapNode<'src>>> {
+        use Jump::*;
+        match self {
+            Continue { layers } => Continue { layers: *layers },
+            Exit { layers, val } => Exit {
+                layers: *layers,
+                val: val.as_heap(tree),
+            },
+            Return { val } => Return {
+                val: val.as_heap(tree),
+            },
+        }
+    }
+    fn display<W: NodeWrapping<'src>>(
+        &self,
+        tree: &'src Tree<'src, W>,
+        internalizer: &Internalizer<'src>,
+        indentation: String,
+    ) -> String {
+        use Jump::*;
+        match self {
+            Continue { layers } => format!("continue * {}", layers),
+            Exit { layers, val } => format!(
+                "exit * {} {}",
+                layers,
+                val.display(tree, internalizer, indentation)
+            ),
+            Return { val } => format!("return {}", val.display(tree, internalizer, indentation)),
+        }
+    }
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Path<P: Clone + Debug + PartialEq + Eq> {
+    pub content: Option<P>,
+    pub jump: Option<Box<Jump<P>>>,
+}
+impl<P: Clone + Debug + PartialEq + Eq> Path<P> {
+    #[inline]
+    pub fn new() -> Self {
+        Self {
+            content: None,
+            jump: None,
+        }
+    }
+}
+impl<'src> Path<NodeId<'src>> {
+    fn as_heap<W: NodeWrapping<'src>>(
+        &'src self,
+        tree: &'src Tree<'src, W>,
+    ) -> Path<Box<HeapNode<'src>>> {
+        Path {
+            content: self
+                .content
+                .map(|content| Box::new(content.get(tree).as_heap(tree))),
+            jump: self.jump.as_ref().map(|jump| Box::new(jump.as_heap(tree))),
+        }
+    }
+    fn display<W: NodeWrapping<'src>>(
+        &self,
+        tree: &'src Tree<'src, W>,
+        internalizer: &Internalizer<'src>,
+        indentation: String,
+    ) -> String {
+        format!(
+            "{}{}",
+            if let Some(content) = self.content {
+                content
+                    .get_wrapper::<W>(tree)
+                    .display(tree, internalizer, indentation.clone())
+            } else {
+                "{}".to_owned()
+            },
+            self.jump.as_ref().map_or("".to_owned(), |jump| format!(
+                "\n{}{}",
+                indentation.clone(),
+                jump.display(tree, internalizer, indentation)
+            ))
+        )
     }
 }
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -335,7 +442,7 @@ impl Bracket {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Node<'src> {
     // control flow structures
     Conditional {
@@ -350,6 +457,7 @@ pub enum Node<'src> {
         imaginary_coefficient: bool,
     }, // (0(b/s/o/d/x))N(.N)((u/i/f/c)(0(b/s/o/d/x))N)(i)
     Quote(String), // "..."
+    Placeholder,   // ..
 
     // identifiers
     Ident(Symbol<'src>),       // x
@@ -379,7 +487,7 @@ pub enum Node<'src> {
         content: NodeId<'src>,
     }, // squared content squared
 }
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HeapNode<'src> {
     // control flow structures
     Conditional {
@@ -394,6 +502,7 @@ pub enum HeapNode<'src> {
         imaginary_coefficient: bool,
     }, // (0(b/s/o/d/x))N(.N)((u/i/f/c)(0(b/s/o/d/x))N)(i)
     Quote(String), // "..."
+    Placeholder,   // ..
 
     // identifiers
     Ident(Symbol<'src>),       // x
@@ -441,10 +550,10 @@ impl<'src> Node<'src> {
             } => Conditional {
                 condition: boxed(condition, tree),
                 looping: *looping,
-                then_body: Path::new(boxed(&then_body.content, tree)),
+                then_body: then_body.as_heap(tree),
                 else_body: else_body
-                    .clone()
-                    .and_then(|else_body| Some(Path::new(boxed(&else_body.content, tree)))),
+                    .as_ref()
+                    .and_then(|else_body| Some(else_body.as_heap(tree))),
             },
             Self::Literal {
                 val,
@@ -454,6 +563,7 @@ impl<'src> Node<'src> {
                 imaginary_coefficient: *imaginary_coefficient,
             },
             Self::Quote(string) => Quote(string.clone()),
+            Self::Placeholder => Placeholder,
             Self::Ident(symbol) => Ident(*symbol),
             Self::PrimitiveType(kind) => PrimitiveType(*kind),
             Self::List(content) => List(
@@ -576,7 +686,7 @@ pub fn to_rust_code<W: Clone + Debug + Unwrapable>(v: &Vec<W>, indentation: Stri
             .join(", "),
     )
 }*/
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct NodeId<'tree> {
     _marker: PhantomData<&'tree ()>,
     idx: usize,

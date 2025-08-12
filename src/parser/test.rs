@@ -1,6 +1,7 @@
 #[test]
 fn test() {
     use crate::{
+        comp,
         error::Errors,
         parser::{
             binary_op::BinaryOp, intern::Internalizer, tokenizing::Tokenizer, unary_op::UnaryOp,
@@ -12,6 +13,20 @@ fn test() {
     use std::path::Path;
 
     macro_rules! node {
+        // Statements
+        [$inter:expr, (stmts, $($arg:tt), *)] => {
+            Box::new(HeapNode::Statements(comp::Vec::new([$(node![$inter, $arg]), *])))
+        };
+
+        // Conditionals
+        [$inter:expr, (loop, $cond:tt, $body:tt)] => {
+            Box::new(HeapNode::Conditional {
+                condition: node![$inter, $cond],
+                looping: true,
+                then_body: node![$inter, $body],
+                else_body: None,
+            })
+        };
         // Binary Ops
         [$inter:expr, ($lhs:tt, add, $rhs:tt)] => {
             Box::new(HeapNode::Binary {
@@ -45,6 +60,14 @@ fn test() {
             })
         };
 
+        [$inter:expr, ($lhs:tt, $op:tt, $rhs:tt)] => {
+            Box::new(HeapNode::Binary {
+                op: BinaryOp::$op,
+                left: node![$inter, $lhs],
+                right: node![$inter, $rhs],
+            })
+        };
+
         // Unary Ops
         [$inter:expr, (neg, $lhs:tt)] => {
             Box::new(HeapNode::Unary {
@@ -60,10 +83,24 @@ fn test() {
             })
         };
 
+        [$inter:expr, ($op:tt, $lhs:tt)] => {
+            Box::new(HeapNode::Unary {
+                op: UnaryOp::$op,
+                operand: node![$inter, $lhs]
+            })
+        };
+
         // Ident
         [$inter:expr, $name:expr] => {
             Box::new(HeapNode::Ident($inter.get($name)))
         };
+
+        // Placeholder
+        [$inter:expr, ..] => {
+            Box::new(HeapNode::PlaceHolder)
+        };
+
+
     }
 
     let errors = Rc::new(Errors::empty(Path::new("example.flou")));
@@ -101,5 +138,14 @@ fn test() {
             internalizer,
             ("a", equals, ("b", mul, (neg, ("c", dot, "d"))))
         ],
+    );
+
+    assert_eq!(
+        parse!(
+            "a := 1 \
+            b := 0
+            "
+        ),
+        node!(internalizer, (stmts, ("a", Write, "1"), ("b", Write, "0")))
     );
 }

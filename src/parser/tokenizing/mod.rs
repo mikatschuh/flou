@@ -2,7 +2,7 @@
 pub mod test;
 pub mod token;
 
-use std::{iter::FusedIterator, str::CharIndices};
+use std::{iter::FusedIterator, slice::Iter, str::CharIndices, vec::IntoIter};
 use token::Token;
 
 use crate::{
@@ -77,6 +77,16 @@ impl<'src> Iterator for Tokenizer<'src> {
     }
 }
 impl<'src> FusedIterator for Tokenizer<'src> {}
+
+impl<'src> Tokenizer<'src> {
+    pub fn consume_while(&mut self, mut predicate: impl FnMut(&Token) -> bool) -> IntoIter<Token> {
+        let mut tokens = Vec::new();
+        while self.peek().is_some_and(&mut predicate) {
+            tokens.push(unsafe { self.next().unwrap_unchecked() });
+        }
+        tokens.into_iter()
+    }
+}
 
 impl<'src> Tokenizer<'src> {
     pub fn new(text: &'src str, errors: Rc<Errors<'src>>) -> Self {
