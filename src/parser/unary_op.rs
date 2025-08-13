@@ -9,12 +9,11 @@ pub enum UnaryOp {
 
     Neg, // -a
 
-    LfT, // 'a
-
     // after one argument // unary - postfix - ops
     Increment, // a++
     Decrement, // b--
 }
+
 use UnaryOp::*;
 impl fmt::Display for UnaryOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -24,8 +23,6 @@ impl fmt::Display for UnaryOp {
             Not => "!",
 
             Neg => "-",
-
-            LfT => "'",
 
             Increment => "++",
             Decrement => "--",

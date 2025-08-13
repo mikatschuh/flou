@@ -1,12 +1,10 @@
-use std::fmt::Display;
-
-use colored::{ColoredString, Colorize};
-
 use crate::{
     error::Span,
-    parser::{binary_op::BinaryOp, unary_op::UnaryOp},
+    parser::{binary_op::BinaryOp, keyword::Keyword, unary_op::UnaryOp},
     tree::Bracket,
 };
+use colored::{ColoredString, Colorize};
+use std::fmt::Display;
 
 #[derive(PartialEq, Debug, Clone, Eq)]
 pub struct Token<'src> {
@@ -17,10 +15,12 @@ pub struct Token<'src> {
 
 #[derive(PartialEq, Debug, Clone, Copy, Eq)]
 pub enum TokenKind {
-    Not,    // !
-    NotNot, // !!
-    Tick,   // '
-    Equal,  // =
+    Not,         // !
+    NotNot,      // !!
+    Punctuation, // .
+    Placeholder, // ..
+    Tick,        // '
+    Equal,       // =
 
     EqualEqual, // ==
     NotEqual,   // !=
@@ -88,8 +88,9 @@ pub enum TokenKind {
 
     Comma, // ,
 
-    Ident, // _
-    Quote, // "_"
+    Ident,            // _
+    Quote,            // "_"
+    Keyword(Keyword), // if / loop / ..
 
     Open(Bracket),   // ( / [ / {
     Closed(Bracket), // ) / ] / }
@@ -105,6 +106,8 @@ impl Display for Token<'_> {
             match self.kind {
                 Not => "!",
                 NotNot => "!!",
+                Punctuation => ".",
+                Placeholder => "..",
                 Tick => "'",
                 Equal => "=",
 
@@ -176,6 +179,7 @@ impl Display for Token<'_> {
 
                 Ident => self.src,
                 Quote => self.src,
+                Keyword(keyword) => keyword.display(),
 
                 Open(bracket) => bracket.display_open(),
 
@@ -184,6 +188,7 @@ impl Display for Token<'_> {
         )
     }
 }
+
 impl<'a> Token<'a> {
     #[inline]
     pub fn new(span: Span, src: &'a str, kind: TokenKind) -> Self {
@@ -194,10 +199,12 @@ impl<'a> Token<'a> {
         format!("{}", self).bold()
     }
 }
+
 impl TokenKind {
     pub fn new(c: char) -> Option<TokenKind> {
         match c {
             '!' => Some(Not),
+            '.' => Some(Punctuation),
             '\'' => Some(Tick),
             '=' => Some(Equal),
             '+' => Some(Plus),
@@ -241,6 +248,10 @@ impl TokenKind {
                 '&' => Some(And),
                 '<' => Some(Left),
                 '>' => Some(Right),
+                _ => None,
+            },
+            Punctuation => match c {
+                '.' => Some(Placeholder),
                 _ => None,
             },
             Equal => match c {
@@ -413,7 +424,6 @@ impl TokenKind {
         use UnaryOp::*;
         match self {
             Self::Not => Some(Not),
-            Tick => Some(LfT),
             RightArrow => Some(Ref),
             Dash => Some(Neg),
             Star => Some(Deref),

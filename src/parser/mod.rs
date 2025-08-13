@@ -1,8 +1,9 @@
 use crate::{
     comp,
-    error::{ErrorCode, Errors, Span},
+    error::{ErrorCode, Errors, Position, Span},
     parser::{
-        binary_op::BinaryOp, intern::Internalizer, keyword::Keyword,
+        binary_op::BinaryOp,
+        intern::{Internalizer, Symbol},
         tokenizing::resolve_escape_sequences,
     },
     tree::{Bracket, Jump, Node, NodeId, NodeWrapper, NodeWrapping, Note, Path, Tree},
@@ -63,6 +64,7 @@ pub fn parse<'src>(text: &'src str, path: &'static std::path::Path) -> (String, 
 
 struct Parser<'src, W: NodeWrapping<'src>> {
     tokenizer: Tokenizer<'src>,
+    span: Span,
     errors: Rc<Errors<'src>>,
     internalizer: Rc<Internalizer<'src>>,
     tree: Tree<'src, W>,
@@ -76,6 +78,7 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
     ) -> Self {
         Self {
             tokenizer,
+            span: Span::beginning(),
             errors,
             internalizer,
             tree: Tree::new(),
@@ -96,108 +99,121 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
         let mut lhs = match self.tokenizer.peek()?.kind {
             Ident => {
                 let Token { span, src, .. } = self.tokenizer.next().unwrap();
-                if let Some(keyword) = Keyword::from_str(src) {
-                    use Keyword::*;
-                    match keyword {
-                        If | Loop => {
-                            let condition = self.parse_expr(4, flags.outside_of_brackets())?;
-                            let then_body = self.parse_path(4, flags.in_brackets);
-                            let else_body = if self
-                                .tokenizer
-                                .peek()
-                                .and_then(|token| Keyword::from_str(token.src))
-                                .is_some_and(|x| x == Else)
-                            {
-                                _ = self.tokenizer.next().unwrap();
-                                Some(self.parse_path(4, flags.in_brackets))
-                            } else {
-                                None
-                            };
-                            self.tree.add(W::new(
-                                span,
-                                Node::Conditional {
-                                    condition,
-                                    looping: keyword == Loop,
-                                    then_body,
-                                    else_body,
-                                },
-                            ))
-                        }
-                        Else => {
-                            self.errors.push(span, ErrorCode::LonelyElse);
-                            self.parse_expr(min_bp, flags)?
-                        }
-                        Continue => match flags.loc {
-                            Path(jump) => {
-                                let layers = 1 + self // +1 because we already saw continue ones
-                                    .tokenizer
-                                    .consume_while(|token| {
-                                        Keyword::from_str(token.src).is_some_and(|x| x == Continue)
-                                    })
-                                    .count();
-
-                                jump.write(Some(Box::new(Jump::Continue { layers })));
-                                return None;
-                            }
-                            FuncArgType => {
-                                self.errors
-                                    .push(span, ErrorCode::JumpInsideFuncArg { keyword: src });
-                                self.parse_expr(min_bp, flags)?
-                            }
-                        },
-                        Exit => match flags.loc {
-                            Path(jump) => {
-                                let layers = 1 + self
-                                    .tokenizer
-                                    .consume_while(|token| {
-                                        Keyword::from_str(token.src).is_some_and(|x| x == Exit)
-                                    })
-                                    .count();
-                                jump.write(Some(Box::new(Jump::Exit {
-                                    layers,
-                                    val: self.parse_path(4, flags.in_brackets),
-                                })));
-                                return None;
-                            }
-                            FuncArgType => {
-                                self.errors
-                                    .push(span, ErrorCode::JumpInsideFuncArg { keyword: src });
-                                self.parse_expr(min_bp, flags)?
-                            }
-                        },
-                        Break => todo!(),
-                        Return => match flags.loc {
-                            Path(jump) => {
-                                jump.write(Some(Box::new(Jump::Return {
-                                    val: self.parse_path(4, flags.in_brackets),
-                                })));
-                                return None;
-                            }
-                            FuncArgType => {
-                                self.errors
-                                    .push(span, ErrorCode::JumpInsideFuncArg { keyword: src });
-                                self.parse_expr(min_bp, flags)?
-                            }
-                        },
-                    }
-                } else if src == ".." {
-                    self.tree.add(W::new(span, Node::Placeholder))
-                } else {
-                    self.tree
-                        .add(W::new(span, Node::Ident(self.internalizer.get(src))))
-                }
+                self.tree
+                    .add(W::new(span).with_node(Node::Ident(self.internalizer.get(src))))
+            }
+            Placeholder => {
+                let Token { span, .. } = self.tokenizer.next().unwrap();
+                self.tree.add(W::new(span).with_node(Node::Placeholder))
             }
             Quote => {
                 let Token { span, src, .. } = self.tokenizer.next().unwrap();
                 let (string, confusions) = resolve_escape_sequences(src);
                 self.tree.add(
-                    W::new(span, Node::Quote(string)).add_notes(
+                    W::new(span).with_node(Node::Quote(string)).add_notes(
                         confusions
                             .into_iter()
                             .map(|confusion| Note::EscapeSequenceConfusion(confusion))
                             .collect(),
                     ),
                 )
+            }
+            Keyword(keyword) => {
+                let Token { span, src, .. } = self.tokenizer.next().unwrap();
+                use keyword::Keyword::*;
+                match keyword {
+                    If | Loop => {
+                        let condition =
+                            self.pop_value(span.end + 1, 4, flags.outside_of_brackets());
+                        let then_body = self.parse_path(4, flags.in_brackets);
+                        let else_body = if self
+                            .tokenizer
+                            .peek()
+                            .is_some_and(|x| x.kind == Keyword(Else))
+                        {
+                            _ = self.tokenizer.next().unwrap();
+                            Some(self.parse_path(4, flags.in_brackets))
+                        } else {
+                            None
+                        };
+                        self.tree.add(W::new(span).with_node(Node::Conditional {
+                            condition,
+                            looping: keyword == Loop,
+                            then_body,
+                            else_body,
+                        }))
+                    }
+                    Else => {
+                        self.errors.push(span, ErrorCode::LonelyElse);
+                        self.parse_expr(min_bp, flags)?
+                    }
+                    Continue => match flags.loc {
+                        Path(jump) => {
+                            let layers = 1 + self // +1 because we already saw continue ones
+                                .tokenizer
+                                .consume_while(|token| token.kind == Keyword(Continue))
+                                .count();
+
+                            jump.write(Some(Box::new(Jump::Continue { layers })));
+                            return None;
+                        }
+                        FuncArgType => {
+                            self.errors
+                                .push(span, ErrorCode::JumpInsideFuncArg { keyword: src });
+                            self.parse_expr(min_bp, flags)?
+                        }
+                    },
+                    Exit => match flags.loc {
+                        Path(jump) => {
+                            let layers = 1 + self
+                                .tokenizer
+                                .consume_while(|token| token.kind == Keyword(Exit))
+                                .count();
+                            jump.write(Some(Box::new(Jump::Exit {
+                                layers,
+                                val: self.parse_path(4, flags.in_brackets),
+                            })));
+                            return None;
+                        }
+                        FuncArgType => {
+                            self.errors
+                                .push(span, ErrorCode::JumpInsideFuncArg { keyword: src });
+                            self.parse_expr(min_bp, flags)?
+                        }
+                    },
+                    Break => todo!(),
+                    Return => match flags.loc {
+                        Path(jump) => {
+                            jump.write(Some(Box::new(Jump::Return {
+                                val: self.parse_path(4, flags.in_brackets),
+                            })));
+                            return None;
+                        }
+                        FuncArgType => {
+                            self.errors
+                                .push(span, ErrorCode::JumpInsideFuncArg { keyword: src });
+                            self.parse_expr(min_bp, flags)?
+                        }
+                    },
+                }
+            }
+            Tick => {
+                let Token {
+                    span: tick_span, ..
+                } = self.tokenizer.next().unwrap();
+                let Some((ident_span, symbol)) = self.pop_identifier(tick_span.end + 1) else {
+                    return self.parse_expr(min_bp, flags);
+                };
+                self.tree
+                    .add(W::new(tick_span - ident_span).with_node(Node::Lifetime(symbol)))
+            }
+            Punctuation => {
+                let Token { span: dot_span, .. } = self.tokenizer.next().unwrap();
+                let Some((ident_span, symbol)) = self.pop_identifier(dot_span.end + 1) else {
+                    return self.parse_expr(min_bp, flags);
+                };
+                self.tree
+                    .add(W::new(dot_span - ident_span).with_node(Node::Field(symbol)))
             }
             Open(own_bracket) => {
                 let Token { span, .. } = self.tokenizer.next().unwrap();
@@ -211,12 +227,13 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
                 Some(op) => {
                     let Token { span, .. } = self.tokenizer.next().unwrap();
                     let operand = self.parse_expr(op.binding_pow(), flags)?;
-                    self.tree.add(W::new(span, Node::Unary { op, operand }))
+                    self.tree
+                        .add(W::new(span).with_node(Node::Unary { op, val: operand }))
                 }
                 _ => return None,
             },
         };
-        while let Some(Token { kind, span, .. }) = self.tokenizer.peek() {
+        while let Some(Token { kind, .. }) = self.tokenizer.peek() {
             if let Closed(..) = kind {
                 return Some(lhs);
             } else if let Open(Bracket::Round | Bracket::Squared) = *kind {
@@ -235,14 +252,11 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
                 let Token { span, .. } = self.tokenizer.next()?;
                 let rhs = self.parse_expr(0, flags.in_brackets())?;
                 self.handle_closed_bracket(rhs, span, bracket);
-                lhs = self.tree.add(W::new(
-                    span,
-                    Node::Binary {
-                        op,
-                        left: lhs,
-                        right: rhs,
-                    },
-                ));
+                lhs = self.tree.add(W::new(span).with_node(Node::Binary {
+                    op,
+                    left: lhs,
+                    right: rhs,
+                }));
             } else if let Comma = *kind {
                 let bp = if flags.in_brackets { (0, 1) } else { (15, 16) };
                 if bp.0 < min_bp {
@@ -258,7 +272,35 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
                 }
                 // let span = chain.first().get_wrapper(&self.tree).span()
                 //    - chain.last().get_wrapper(&self.tree).span();
-                lhs = self.tree.add(W::new(span, Node::List(chain)))
+                lhs = self.tree.add(W::new(span).with_node(Node::List(chain)))
+            } else if let Punctuation = kind {
+                let Token {
+                    span: first_span, ..
+                } = self.tokenizer.next()?;
+                let mut end = first_span.start;
+                let Some((.., symbol)) = self.pop_identifier(first_span.end + 1) else {
+                    return self.parse_expr(min_bp, flags);
+                };
+                let mut chain = comp::Vec::new([symbol]);
+                while let Some(Token {
+                    kind: Punctuation, ..
+                }) = self.tokenizer.peek()
+                {
+                    let Token { span: dot_span, .. } = self.tokenizer.next().unwrap();
+                    let Some((span, symbol)) = self.pop_identifier(dot_span.end + 1) else {
+                        break;
+                    };
+                    chain.push(symbol);
+                    end = span.end
+                }
+                lhs = self.tree.add(
+                    W::new(lhs.get_wrapper(&self.tree).span().start - end).with_node(
+                        Node::Fields {
+                            val: lhs,
+                            fields: chain,
+                        },
+                    ),
+                )
             } else if let Some(op) = kind.as_infix() {
                 if op.binding_pow().0 < min_bp {
                     return Some(lhs);
@@ -279,22 +321,16 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
                         }
                         break;
                     }
-                    lhs = self.tree.add(W::new(
-                        span,
-                        Node::Chain {
-                            first: lhs,
-                            additions: chain,
-                        },
-                    ))
+                    lhs = self.tree.add(W::new(span).with_node(Node::Chain {
+                        first: lhs,
+                        additions: chain,
+                    }))
                 } else {
-                    lhs = self.tree.add(W::new(
-                        span,
-                        Node::Binary {
-                            op,
-                            left: lhs,
-                            right: rhs,
-                        },
-                    ));
+                    lhs = self.tree.add(W::new(span).with_node(Node::Binary {
+                        op,
+                        left: lhs,
+                        right: rhs,
+                    }));
                 }
             } else if let Some(op) = kind.as_postfix() {
                 if op.binding_pow() < min_bp {
@@ -303,7 +339,7 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
                 let Token { span, .. } = self.tokenizer.next()?;
                 lhs = self
                     .tree
-                    .add(W::new(span, Node::Unary { op, operand: lhs }));
+                    .add(W::new(span).with_node(Node::Unary { op, val: lhs }));
             } else if let Colon = kind {
                 let bp = (4, 5);
                 if bp.0 < min_bp {
@@ -323,13 +359,15 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
                     let rhs = self.parse_expr(bp.1, flags)?;
                     chain.push(rhs)
                 }
-                lhs = self.tree.add(W::new(span, Node::ColonStruct(chain)));
+                lhs = self
+                    .tree
+                    .add(W::new(span).with_node(Node::ColonStruct(chain)));
             } else {
                 let bp = (2, 3);
                 if bp.0 < min_bp {
                     return Some(lhs);
                 }
-                let span = *span;
+
                 let Some(rhs) = self.parse_expr(bp.1, flags) else {
                     return Some(lhs);
                 };
@@ -337,10 +375,16 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
                 while let Some(rhs) = self.parse_expr(bp.1, flags) {
                     chain.push(rhs)
                 }
-                lhs = self.tree.add(W::new(span, Node::Statements(chain)));
+                lhs = self.tree.add(
+                    W::new(
+                        lhs.get_wrapper(&self.tree).span()
+                            - chain.last().get_wrapper(&self.tree).span(),
+                    )
+                    .with_node(Node::Statements(chain)),
+                );
             }
-        }
-        // EOF
+        } // EOF
+
         Some(lhs)
     }
 
@@ -394,6 +438,40 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
                 },
             );
         }
+    }
+
+    /// Pops an identifier if the next token is one. If not it generates the correct error message
+    /// and leaves the token there. The position indicates were the identifier is expected to go.
+    fn pop_identifier(&mut self, pos: Position) -> Option<(Span, Symbol<'src>)> {
+        if let Some(Token {
+            kind, span, src, ..
+        }) = self.tokenizer.peek()
+        {
+            if let TokenKind::Ident = kind {
+                let Token { src, span, .. } = self.tokenizer.next().unwrap();
+                Some((span, self.internalizer.get(src)))
+            } else {
+                self.errors
+                    .push(*span, ErrorCode::ExpectedIdent { found: *src });
+                None
+            }
+        } else {
+            self.errors
+                .push(pos - pos, ErrorCode::ExpectedIdentFoundEOF);
+            None
+        }
+    }
+
+    /// Parses a value, if no value can be generated it makes an error message and returns an
+    /// empty node.
+    fn pop_value<'caller>(
+        &mut self,
+        pos: Position,
+        min_bp: u8,
+        flags: Flags<'src, 'caller>,
+    ) -> NodeId<'src> {
+        self.parse_expr(min_bp, flags)
+            .unwrap_or_else(|| self.tree.add(W::new(pos - pos)))
     }
 }
 

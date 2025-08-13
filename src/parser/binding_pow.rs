@@ -45,8 +45,6 @@ impl UnaryOp {
             Ref | Deref | Not => 125,
 
             Increment | Decrement => 10,
-
-            LfT => u8::MAX,
         }
     }
 }

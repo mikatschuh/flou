@@ -31,7 +31,7 @@ A UAF could happen. For example:
 To prevent that the references got implicit lifetimes. These explain how long the reference can be
 used and at which point it would cause an UAF. They would look like this:
 
-    reference = -{'a}-> ptr
+    reference = 'a -> ptr
 
 The lifetime "'a" immediately ends when "ptr" is dropped. In the previous scenario that would cause
 the following compile time error:
@@ -45,15 +45,13 @@ the following compile time error:
 For heap allocations a memory responsibility can be attached to a pointer,
 making him a responsible reference, which looks like this in code:
 
-    allocator = std.mem.Global
+    allocator = std.mem.global
 
-    ptr = allocator |> alloc(u32) // ptr is of type "-> (owned[allocator], u32)"
+    ptr = allocator |> alloc(u32) // ptr is of type "Heap[Global, u32]"
 
-The "owned[allocator]" part contains no data. Its just a marker. But what it does,
-is, it automatically calls the deallocate function of the allocater ones ptr runs out of scope.
-This feature prevents memory leaks pretty well.
-When it comes to arena allocators, a pointer to the buffer is needed for freeing.
-The pointer would be stored in the "owned[allocator]" part.
+What it does, is, it automatically calls the deallocate function of the allocater ones ptr runs
+out of scope. This feature prevents memory leaks pretty well. When it comes to arena allocators, a
+pointer to the buffer is needed for freeing. The pointer would be stored in the "Heap" datatype.
 Now for the UAF problem. Picture the following scenario:
 
     arr = vec [1, 2, 3]

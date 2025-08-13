@@ -14,19 +14,19 @@ use crate::{
 // use colored::Colorize;
 use std::{
     fmt::Debug,
-    hash::BuildHasherDefault,
     marker::PhantomData,
     ops::{Index, IndexMut},
     vec,
 };
 
 pub trait NodeWrapping<'src>: Clone + Debug {
-    fn new(span: Span, node: Node<'src>) -> Self;
+    fn new(span: Span) -> Self;
     fn add_note(self, comment: Note) -> Self;
     fn add_notes(self, comments: Vec<Note>) -> Self;
     fn with_type(self, typed: Type<'src>) -> Self;
-    fn node_mut(&mut self) -> &mut Node<'src>;
-    fn node(&self) -> &Node<'src>;
+    fn with_node(self, node: Node<'src>) -> Self;
+    fn node_mut(&mut self) -> &mut Option<Node<'src>>;
+    fn node(&self) -> Option<&Node<'src>>;
     fn typed(&self) -> Option<Type>;
     fn span(&self) -> Span;
     fn span_mut(&mut self) -> &mut Span;
@@ -44,16 +44,16 @@ const DISPLAY_INDENTATION_NEG_1: &str = "   ";
 #[derive(Debug, Clone, PartialEq)]
 pub struct NodeWrapper<'src> {
     span: Span,
-    node: Node<'src>,
+    node: Option<Node<'src>>,
     typed: Option<Type<'src>>,
     notes: Vec<Note>,
 }
 
 impl<'src> NodeWrapping<'src> for NodeWrapper<'src> {
-    fn new(span: Span, node: Node<'src>) -> Self {
+    fn new(span: Span) -> Self {
         Self {
             span: span,
-            node,
+            node: None,
             notes: vec![],
             typed: None,
         }
@@ -73,12 +73,17 @@ impl<'src> NodeWrapping<'src> for NodeWrapper<'src> {
         self
     }
     #[inline]
-    fn node_mut(&mut self) -> &mut Node<'src> {
+    fn with_node(mut self, node: Node<'src>) -> Self {
+        self.node = Some(node);
+        self
+    }
+    #[inline]
+    fn node_mut(&mut self) -> &mut Option<Node<'src>> {
         &mut self.node
     }
     #[inline]
-    fn node(&self) -> &Node<'src> {
-        &self.node
+    fn node(&self) -> Option<&Node<'src>> {
+        self.node.as_ref()
     }
     #[inline]
     fn typed(&self) -> Option<Type> {
@@ -98,16 +103,21 @@ impl<'src> NodeWrapping<'src> for NodeWrapper<'src> {
         internalizer: &Internalizer,
         indentation: String,
     ) -> String {
+        let Some(ref node) = self.node else {
+            return "None".to_owned();
+        };
         let next_indentation = indentation.clone() + DISPLAY_INDENTATION;
         use Node::*;
         format!(
             "{}",
-            match &self.node {
+            match node {
                 Literal {
                     val,
                     imaginary_coefficient,
                 } => format!("{val} {}", if *imaginary_coefficient { "i" } else { "()" }),
                 Ident(id) => format!("Id  {}", internalizer.resolve(*id)),
+                Lifetime(sym) => format!("Lifetime  {}", internalizer.resolve(*sym)),
+                Field(sym) => format!("Field  {}", internalizer.resolve(*sym)),
                 Placeholder => "..".to_owned(),
                 Quote(quote) => format!("Quote  \"{}\"", with_written_out_escape_sequences(&quote)),
                 Binary { op, left, right } => format!(
@@ -121,9 +131,9 @@ impl<'src> NodeWrapping<'src> for NodeWrapper<'src> {
                         .display(tree, internalizer, next_indentation),
                     indentation
                 ),
-                Unary { op, operand } => format!(
+                Unary { op, val } => format!(
                     "{op} {}",
-                    operand.get_wrapper(tree).display(
+                    val.get_wrapper(tree).display(
                         tree,
                         internalizer,
                         indentation
@@ -318,6 +328,15 @@ impl<'src> NodeWrapping<'src> for NodeWrapper<'src> {
                             &else_body.display(tree, internalizer, indentation + "     "),
                         ))
                 ),
+                Fields { val, fields } => format!(
+                    "{}{}",
+                    val.get_wrapper(tree)
+                        .display(tree, internalizer, indentation.clone()),
+                    fields
+                        .iter()
+                        .map(|sym| format!(" . {}", internalizer.resolve(*sym)))
+                        .collect::<String>()
+                ),
                 _ => todo!(),
             }
         )
@@ -392,7 +411,7 @@ impl<'src> Path<NodeId<'src>> {
         Path {
             content: self
                 .content
-                .map(|content| Box::new(content.get(tree).as_heap(tree))),
+                .map(|content| Box::new(content.get(tree).unwrap().as_heap(tree))),
             jump: self.jump.as_ref().map(|jump| Box::new(jump.as_heap(tree))),
         }
     }
@@ -461,12 +480,14 @@ pub enum Node<'src> {
 
     // identifiers
     Ident(Symbol<'src>),       // x
+    Lifetime(Symbol<'src>),    // 'x
+    Field(Symbol<'src>),       // .x
     PrimitiveType(Type<'src>), // u32, i32, c32, f32, ...
 
     // multiple values
     List(comp::Vec<NodeId<'src>, 2>),        // a, b, c, d, ...
     ColonStruct(comp::Vec<NodeId<'src>, 2>), // a : b : c : d
-    Statements(comp::Vec<NodeId<'src>, 2>),
+    Statements(comp::Vec<NodeId<'src>, 2>),  // a b c d ...
 
     // operations
     Binary {
@@ -480,8 +501,12 @@ pub enum Node<'src> {
     }, // first op additions[0].0 additions[0].1
     Unary {
         op: UnaryOp,
-        operand: NodeId<'src>,
+        val: NodeId<'src>,
     }, // op operand
+    Fields {
+        val: NodeId<'src>,
+        fields: comp::Vec<Symbol<'src>, 1>,
+    },
     Brackets {
         kind: Bracket,
         content: NodeId<'src>,
@@ -506,6 +531,8 @@ pub enum HeapNode<'src> {
 
     // identifiers
     Ident(Symbol<'src>),       // x
+    Lifetime(Symbol<'src>),    // 'x
+    Field(Symbol<'src>),       // .x
     PrimitiveType(Type<'src>), // u32, i32, c32, f32, ...
 
     // multiple values
@@ -527,6 +554,10 @@ pub enum HeapNode<'src> {
         op: UnaryOp,
         operand: Box<HeapNode<'src>>,
     }, // op operand
+    Fields {
+        val: Box<HeapNode<'src>>,
+        fields: comp::Vec<Symbol<'src>, 1>,
+    }, // val.fields
     Brackets {
         kind: Bracket,
         content: Box<HeapNode<'src>>,
@@ -538,7 +569,7 @@ impl<'src> Node<'src> {
             node: &NodeId<'src>,
             tree: &'src Tree<'src, W>,
         ) -> Box<HeapNode<'src>> {
-            Box::new(node.get(tree).as_heap(tree))
+            Box::new(node.get(tree).unwrap().as_heap(tree))
         }
         use HeapNode::*;
         match self {
@@ -565,6 +596,8 @@ impl<'src> Node<'src> {
             Self::Quote(string) => Quote(string.clone()),
             Self::Placeholder => Placeholder,
             Self::Ident(symbol) => Ident(*symbol),
+            Self::Lifetime(symbol) => Lifetime(*symbol),
+            Self::Field(symbol) => Field(*symbol),
             Self::PrimitiveType(kind) => PrimitiveType(*kind),
             Self::List(content) => List(
                 content
@@ -596,9 +629,13 @@ impl<'src> Node<'src> {
                     .map(|item| (item.0, boxed(&item.1, tree)))
                     .collect(),
             },
-            Self::Unary { op, operand } => Unary {
+            Self::Unary { op, val: operand } => Unary {
                 op: *op,
                 operand: boxed(operand, tree),
+            },
+            Self::Fields { val, fields } => Fields {
+                val: boxed(val, tree),
+                fields: fields.clone(),
             },
             Self::Brackets { kind, content } => Brackets {
                 kind: *kind,
@@ -701,21 +738,24 @@ impl<'tree> NodeId<'tree> {
         }
     }
     #[inline]
-    pub fn get(self, tree: &'tree Tree<'tree, impl NodeWrapping<'tree>>) -> &'tree Node<'tree> {
+    pub fn get<'borrow>(
+        self,
+        tree: &'borrow Tree<'tree, impl NodeWrapping<'tree>>,
+    ) -> Option<&'borrow Node<'tree>> {
         tree[self].node()
     }
     #[inline]
-    pub fn get_mut(
+    pub fn get_mut<'borrow>(
         self,
-        tree: &'tree mut Tree<'tree, impl NodeWrapping<'tree>>,
-    ) -> &'tree mut Node<'tree> {
+        tree: &'borrow mut Tree<'tree, impl NodeWrapping<'tree>>,
+    ) -> &'borrow mut Option<Node<'tree>> {
         tree[self].node_mut()
     }
     #[inline]
-    pub fn get_wrapper<Wrapper: NodeWrapping<'tree>>(
+    pub fn get_wrapper<'borrow, Wrapper: NodeWrapping<'tree>>(
         self,
-        tree: &'tree Tree<'tree, Wrapper>,
-    ) -> &'tree Wrapper {
+        tree: &'borrow Tree<'tree, Wrapper>,
+    ) -> &'borrow Wrapper {
         &tree[self]
     }
     #[inline]
@@ -759,7 +799,7 @@ impl<'src, W: NodeWrapping<'src> + 'src> Tree<'src, W> {
     }
 
     pub fn build_graph(&'src self, root: NodeId<'src>) -> Box<HeapNode<'src>> {
-        Box::new(self[root].node().as_heap(self))
+        Box::new(self[root].node().unwrap().as_heap(self))
     }
 }
 

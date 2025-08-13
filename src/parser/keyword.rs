@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Keyword {
     Loop,
     If,
@@ -8,11 +8,11 @@ pub enum Keyword {
     Exit,
     Return,
 }
-use std::fmt;
-impl fmt::Display for Keyword {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+
+impl Keyword {
+    pub fn display(&self) -> &'static str {
         use Keyword::*;
-        let string = match self {
+        match self {
             Loop => "loop",
             If => "if",
             Else => "else",
@@ -20,11 +20,8 @@ impl fmt::Display for Keyword {
             Break => "break",
             Exit => "exit",
             Return => "return",
-        };
-        write!(f, "{}", string)
+        }
     }
-}
-impl Keyword {
     pub fn from_str(string: &str) -> Option<Self> {
         use Keyword::*;
         match string {

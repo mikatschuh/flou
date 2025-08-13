@@ -7,7 +7,7 @@ use token::Token;
 
 use crate::{
     error::{ErrorCode, Errors, Position, Span},
-    parser::tokenizing::token::TokenKind,
+    parser::{keyword::Keyword, tokenizing::token::TokenKind},
     utilities::{ArrayQueue, Rc},
 };
 
@@ -224,8 +224,10 @@ impl<'src> Tokenizer<'src> {
             }),
             State::Id => self.buffer.push(Token {
                 span,
+                kind: Keyword::from_str(&self.text[self.start_i..end_i])
+                    .map(|keyword| TokenKind::Keyword(keyword))
+                    .unwrap_or(TokenKind::Ident),
                 src: &self.text[self.start_i..end_i],
-                kind: TokenKind::Ident,
             }),
             State::Nothing => return, // skip the reassignment
         }

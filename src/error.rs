@@ -52,9 +52,16 @@ pub enum ErrorCode<'src> {
     ExpectedValue {
         found: &'src str,
     },
+    ExpectedValueFoundEOF,
+
     DidntExpectValue {
         found: &'src str,
     },
+    ExpectedIdent {
+        found: &'src str,
+    },
+    ExpectedIdentFoundEOF,
+
     UnknownOperator {
         op: &'src str,
     },
@@ -71,6 +78,7 @@ pub enum ErrorCode<'src> {
     // control structure mistakes
     LonelyElse,
     SecondElse,
+
     JumpInsideFuncArg {
         keyword: &'src str,
     },
@@ -226,12 +234,25 @@ impl Error<'_> {
                 ExpectedValue { found } => format_error!(
                     self.section.to_string(path),
                     "expected a value found {}",
-                    [*found]
+                    [found]
+                ),
+                ExpectedValueFoundEOF => format_error!(
+                    self.section.to_string(path),
+                    "expected a value but the file ended"
                 ),
                 DidntExpectValue { found } => format_error!(
                     self.section.to_string(path),
                     "didn't expect a value found {}",
-                    [*found]
+                    [found]
+                ),
+                ExpectedIdent { found } => format_error!(
+                    self.section.to_string(path),
+                    "expected an identifier, found {}",
+                    [found]
+                ),
+                ExpectedIdentFoundEOF => format_error!(
+                    self.section.to_string(path),
+                    "expected an identifier but the file ended"
                 ),
                 NoClosingQuotes { quote } => format_error!(
                     self.section.to_string(path),
@@ -380,6 +401,45 @@ impl Position {
         self
     }
 }
+
+impl Add<usize> for Position {
+    type Output = Self;
+    #[inline]
+    fn add(mut self, rhs: usize) -> Self::Output {
+        self.collum += rhs;
+        self
+    }
+}
+impl Sub<usize> for Position {
+    type Output = Self;
+    #[inline]
+    fn sub(mut self, rhs: usize) -> Self::Output {
+        self.collum -= rhs;
+        self
+    }
+}
+impl AddAssign<usize> for Position {
+    fn add_assign(&mut self, rhs: usize) {
+        self.collum += rhs;
+    }
+}
+impl SubAssign<usize> for Position {
+    fn sub_assign(&mut self, rhs: usize) {
+        self.collum -= rhs;
+    }
+}
+impl Sub<Position> for Position {
+    type Output = Span;
+    /// subtracts the two positions
+    #[inline]
+    fn sub(self, rhs: Position) -> Self::Output {
+        Span {
+            start: self,
+            end: rhs,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Span {
     pub start: Position,
@@ -445,35 +505,10 @@ impl From<Position> for Span {
         }
     }
 }
-impl Add<usize> for Position {
-    type Output = Self;
-    #[inline]
-    fn add(mut self, rhs: usize) -> Self::Output {
-        self.collum += rhs;
-        self
-    }
-}
-impl Sub<usize> for Position {
-    type Output = Self;
-    #[inline]
-    fn sub(mut self, rhs: usize) -> Self::Output {
-        self.collum -= rhs;
-        self
-    }
-}
-impl AddAssign<usize> for Position {
-    fn add_assign(&mut self, rhs: usize) {
-        self.collum += rhs;
-    }
-}
-impl SubAssign<usize> for Position {
-    fn sub_assign(&mut self, rhs: usize) {
-        self.collum -= rhs;
-    }
-}
+
 impl Sub<Span> for Span {
     type Output = Span;
-    /// combines the two positions
+    /// combines the two spans
     #[inline]
     fn sub(mut self, rhs: Span) -> Self::Output {
         self.end.line = rhs.end.line;
@@ -481,17 +516,14 @@ impl Sub<Span> for Span {
         self
     }
 }
-impl Sub<Position> for Position {
-    type Output = Span;
-    /// subtracts the two positions
+impl SubAssign<Span> for Span {
+    /// combines the two spans and stores the result in the first
     #[inline]
-    fn sub(self, rhs: Position) -> Self::Output {
-        Span {
-            start: self,
-            end: rhs,
-        }
+    fn sub_assign(&mut self, rhs: Span) {
+        self.end = rhs.end
     }
 }
+
 impl Span {
     fn to_string(&self, path: &Path) -> String {
         match self.start.line == self.end.line {
