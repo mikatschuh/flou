@@ -201,10 +201,8 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
             }
             Open(own_bracket) => {
                 let Token { span, .. } = self.tokenizer.next().unwrap();
-                let content = self.parse_expr(
-                    0,
-                    flags.inside_of_brackets_if(own_bracket != Bracket::Curly),
-                )?;
+                let content =
+                    self.parse_expr(0, flags.in_brackets_if(own_bracket != Bracket::Curly))?;
                 self.handle_closed_bracket(content, span, own_bracket);
                 content
             }
@@ -235,7 +233,7 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
                     return Some(lhs);
                 }
                 let Token { span, .. } = self.tokenizer.next()?;
-                let rhs = self.parse_expr(0, flags.inside_of_brackets())?;
+                let rhs = self.parse_expr(0, flags.in_brackets())?;
                 self.handle_closed_bracket(rhs, span, bracket);
                 lhs = self.tree.add(W::new(
                     span,
@@ -419,7 +417,7 @@ impl<'src, 'caller> Flags<'src, 'caller> {
             loc: Location::Path(jump),
         }
     }
-    fn inside_of_brackets(mut self) -> Self {
+    fn in_brackets(mut self) -> Self {
         self.in_brackets = true;
         self
     }
@@ -427,7 +425,7 @@ impl<'src, 'caller> Flags<'src, 'caller> {
         self.in_brackets = false;
         self
     }
-    fn inside_of_brackets_if(mut self, condition: bool) -> Self {
+    fn in_brackets_if(mut self, condition: bool) -> Self {
         self.in_brackets = condition;
         self
     }

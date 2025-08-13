@@ -1,5 +1,5 @@
-Maybe[T] | .Some, .val T
-         | .None
+Maybe[T] | .some, .val T
+         | .none
 
 
 Employee {
@@ -14,10 +14,10 @@ add(a=1, b=2)
 
 Linked List:
 
-Node {
-    .content u32,
-    .next | .Some, .node -> Node
-          | .None
+Node[T] {
+    .content T,
+    .next | { .some, .next -}-> Node
+          | .none
 }
 
 Node { .content = 0, .next = { .Some, -)}->
