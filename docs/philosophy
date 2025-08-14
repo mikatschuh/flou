@@ -8,20 +8,20 @@ Any occurrence of these is called an expression.
 
 Bindings are abstractions on expressions.
 
-Bindings are the way to access existing expressions. Bindings are not typed, the values are typed. A
-binding is bound to its execution path. Expressions are dropped when all the bindings are no longer used.
-When an expression is dropped all the bindings cannot be used anymore.
+Bindings are the way to access existing expressions. Bindings are not typed, their expressions are typed.
+A binding is bound to its execution path. Expressions are dropped when all its bindings are no longer used.
+When an expression is dropped all its bindings cannot be used anymore.
 
 To encapsulate mutability variable bindings are introduced. They are bound to a unique expression by the
 compiler when created. These expressions are then uninitilized. When a uninitilized expression is accessed
 what happens is called undefined behaviour. Mutating is done with certain operators like: :=, =|=, +=, ++
 
-When it comes to control flow especially pattern matching flow follows a unique approach: pack control
-flow into expressions. An example of this is iterating in flow:
+When it comes to control flow, especially pattern matching, Flou follows a unique approach: pack control
+flow into expressions. An example of this is iterating in Flou:
 
     arr[0:..:1] += 2
 
-This would increment every element of the arr by two. The iterator executes the expression n times.
+This would increment every element of the arr by two. The expression is executed n times.
 This would be the equivalent in Rust:
 
     for v in arr.iter_mut() {
@@ -41,4 +41,4 @@ This equals:
 
     optional.map(|v| v += 1)
 
-And Flou's version works right of the box for every enum.
+And Flou's version works right out of the box for every enum.
