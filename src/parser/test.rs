@@ -45,8 +45,7 @@ fn test() {
         };
 
         [$inter:expr, ($lhs:tt, equals, $rhs:tt)] => {
-            Box::new(HeapNode::Binary {
-                op: BinaryOp::Equation,
+            Box::new(HeapNode::Binding {
                 left: node![$inter, $lhs],
                 right: node![$inter, $rhs],
             })

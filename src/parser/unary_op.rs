@@ -3,11 +3,11 @@ use std::fmt;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum UnaryOp {
     // infront of one argument // unary - prefix - ops
-    Ref,   // -> a
-    Deref, // *a
-    Not,   // !a
+    Ref, // -> a
+    Not, // !a
 
     Neg, // -a
+    Pos, // +a
 
     // after one argument // unary - postfix - ops
     Increment, // a++
@@ -19,10 +19,10 @@ impl fmt::Display for UnaryOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let string = match self {
             Ref => "->",
-            Deref => "*",
             Not => "!",
 
             Neg => "-",
+            Pos => "+",
 
             Increment => "++",
             Decrement => "--",

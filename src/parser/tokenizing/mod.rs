@@ -2,7 +2,7 @@
 pub mod test;
 pub mod token;
 
-use std::{iter::FusedIterator, slice::Iter, str::CharIndices, vec::IntoIter};
+use std::{iter::FusedIterator, str::CharIndices, vec::IntoIter};
 use token::Token;
 
 use crate::{
@@ -16,7 +16,7 @@ const BUFFER_LOG_2: usize = 1;
 
 #[derive(Debug, Clone)]
 pub struct Tokenizer<'src> {
-    span: Span, // maybe change to more efficient format
+    span: Span,
     pos_state: PositionState,
 
     state: State,
@@ -96,7 +96,7 @@ impl<'src> Tokenizer<'src> {
 
             state: State::Nothing,
 
-            text: text.into(),
+            text,
             chars: text.char_indices(),
 
             start_i: 0,
@@ -119,9 +119,7 @@ impl<'src> Tokenizer<'src> {
 
 impl<'src> Tokenizer<'src> {
     fn next_char(&mut self) -> Option<char> {
-        let Some((i, c)) = self.chars.next() else {
-            return None;
-        };
+        let (i, c) = self.chars.next()?;
         self.pos_state.step(self.span.end_mut(), c);
         self.i = self.next_i;
         self.next_i = i + c.len_utf8();
@@ -190,17 +188,14 @@ impl<'src> Tokenizer<'src> {
     fn quote(&mut self, start_i: usize) {
         self.span.start = self.span.end;
         while let Some(c) = self.next_char() {
-            match c {
-                '"' => {
-                    self.buffer.push(Token {
-                        span: self.span,
-                        src: &self.text[start_i..self.next_i],
-                        kind: TokenKind::Quote,
-                    });
-                    return;
-                } // quote ends
-                _ => {}
-            }
+            if c == '"' {
+                self.buffer.push(Token {
+                    span: self.span,
+                    src: &self.text[start_i..self.next_i],
+                    kind: TokenKind::Quote,
+                });
+                return;
+            } // quote ends
         }
         self.errors.push(
             self.span,
@@ -225,7 +220,7 @@ impl<'src> Tokenizer<'src> {
             State::Id => self.buffer.push(Token {
                 span,
                 kind: Keyword::from_str(&self.text[self.start_i..end_i])
-                    .map(|keyword| TokenKind::Keyword(keyword))
+                    .map(TokenKind::Keyword)
                     .unwrap_or(TokenKind::Ident),
                 src: &self.text[self.start_i..end_i],
             }),
@@ -282,7 +277,7 @@ pub fn resolve_escape_sequences(quote: &str) -> (String, Vec<EscapeSequenceConfu
                     output_string.push(c);
                     confusions.push(EscapeSequenceConfusion {
                         pos: relative_position - 1 - relative_position,
-                        sequence: format!("\\{}", c),
+                        sequence: format!("\\{c}"),
                     })
                 }
             }

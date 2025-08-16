@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use colored::*;
-use std::{time::Instant, u128};
+use std::time::Instant;
 
 use error::CliError;
 use threader::Threadpool;
@@ -43,16 +43,6 @@ enum Commands {
     Build { path: Option<String> },
 }
 fn main() {
-    fn summarize(time_past: u128, task: &str, attributes: &str) {
-        println!(
-            "\n{}  {} {} {} {}\n",
-            "Finished".bold(),
-            task,
-            "with",
-            attributes,
-            format!("in: {}", format_time(time_past))
-        )
-    }
     match Cli::try_parse() {
         Ok(parsed) => match parsed.command {
             Some(Commands::Build { path }) => {
@@ -65,7 +55,7 @@ fn main() {
                 })() {
                     println!("{e}");
                 } else if !parsed.mute {
-                    summarize(now.elapsed().as_nanos(), "compiling", "no optimizations");
+                    print_time(now.elapsed().as_nanos(), "compiling", "no optimizations");
                 }
             }
             None => println!("{}", *ABOUT),
@@ -88,12 +78,11 @@ fn main() {
 }
 fn print_time(time_past: u128, task: &str, attributes: &str) {
     println!(
-        "\n{}  {} {} {} {}\n",
+        "\n{}  {} with {} in: {}\n",
         "Finished".bold(),
         task,
-        "with",
         attributes,
-        format!("in: {}", format_time(time_past))
+        format_time(time_past)
     )
 }
 fn format_time(time: u128) -> String {
@@ -107,7 +96,7 @@ fn format_time(time: u128) -> String {
         time /= 1000.0;
         unit_number += 1;
     }
-    let mut number_as_string = format!("{}", time);
+    let mut number_as_string = time.to_string();
     if !number_as_string.contains(".") {
         number_as_string += ".0";
     }
@@ -148,12 +137,12 @@ use std::fmt::Display;
 impl Formatter {
     fn input<T: Display>(&self, input: &T) {
         if self.enabled {
-            println!("==>  {}", format!("{}", input).bold())
+            println!("==>  {}", input.to_string().bold())
         }
     }
     fn state<T: Display>(&self, text: &T) {
         if self.enabled {
-            println!("\n{}\n", text)
+            println!("\n{text}\n")
         }
     }
     fn log(&self, text: &str) {

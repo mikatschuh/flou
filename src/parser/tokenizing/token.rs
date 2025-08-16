@@ -196,7 +196,7 @@ impl<'a> Token<'a> {
     }
     #[inline]
     pub fn bold(&self) -> ColoredString {
-        format!("{}", self).bold()
+        self.to_string().bold()
     }
 }
 
@@ -257,6 +257,48 @@ impl TokenKind {
             Equal => match c {
                 '|' => Some(EqualPipe),
                 '=' => Some(EqualEqual),
+                _ => None,
+            },
+            EqualEqual => match c {
+                '=' => Some(EqualEqual),
+                _ => None,
+            },
+            Left => match c {
+                '<' => Some(LeftLeft),
+                '-' => Some(LeftArrow),
+                '=' => Some(LeftEqual),
+                _ => None,
+            },
+            NotLeft => match c {
+                '=' => Some(NotLeftEqual),
+                _ => None,
+            },
+            LeftEqual => match c {
+                '=' => Some(LeftEqual),
+                _ => None,
+            },
+            NotLeftEqual => match c {
+                '=' => Some(NotLeftEqual),
+                _ => None,
+            },
+            Right => match c {
+                '=' => Some(RightEqual),
+                '>' => Some(RightRight),
+                '|' => Some(RightPipe),
+                '<' => Some(Cross),
+                _ => None,
+            },
+            NotRight => match c {
+                '|' => Some(NotRightPipe),
+                '=' => Some(NotRightEqual),
+                _ => None,
+            },
+            RightEqual => match c {
+                '=' => Some(RightEqual),
+                _ => None,
+            },
+            NotRightEqual => match c {
+                '=' => Some(NotRightEqual),
                 _ => None,
             },
             Plus => match c {
@@ -322,28 +364,6 @@ impl TokenKind {
             NotAnd => match c {
                 '&' => Some(NotAndAnd),
                 '=' => Some(NotAndEqual),
-                _ => None,
-            },
-            Left => match c {
-                '<' => Some(LeftLeft),
-                '-' => Some(LeftArrow),
-                '=' => Some(LeftEqual),
-                _ => None,
-            },
-            NotLeft => match c {
-                '=' => Some(NotLeftEqual),
-                _ => None,
-            },
-            Right => match c {
-                '=' => Some(RightEqual),
-                '>' => Some(RightRight),
-                '|' => Some(RightPipe),
-                '<' => Some(Cross),
-                _ => None,
-            },
-            NotRight => match c {
-                '|' => Some(NotRightPipe),
-                '=' => Some(NotRightEqual),
                 _ => None,
             },
             Colon => match c {
@@ -426,7 +446,7 @@ impl TokenKind {
             Self::Not => Some(Not),
             RightArrow => Some(Ref),
             Dash => Some(Neg),
-            Star => Some(Deref),
+            Plus => Some(Pos),
             _ => None,
         }
     }
@@ -434,8 +454,6 @@ impl TokenKind {
     pub fn as_infix(self) -> Option<BinaryOp> {
         use BinaryOp::*;
         match self {
-            Self::Equal => Some(Equation),
-
             EqualEqual => Some(Equal),
             NotEqual => Some(NonEqual),
 

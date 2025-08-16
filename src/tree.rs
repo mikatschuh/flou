@@ -52,7 +52,7 @@ pub struct NodeWrapper<'src> {
 impl<'src> NodeWrapping<'src> for NodeWrapper<'src> {
     fn new(span: Span) -> Self {
         Self {
-            span: span,
+            span,
             node: None,
             notes: vec![],
             typed: None,
@@ -108,238 +108,200 @@ impl<'src> NodeWrapping<'src> for NodeWrapper<'src> {
         };
         let next_indentation = indentation.clone() + DISPLAY_INDENTATION;
         use Node::*;
-        format!(
-            "{}",
-            match node {
-                Literal {
-                    val,
-                    imaginary_coefficient,
-                } => format!("{val} {}", if *imaginary_coefficient { "i" } else { "()" }),
-                Ident(id) => format!("Id  {}", internalizer.resolve(*id)),
-                Lifetime(sym) => format!("Lifetime  {}", internalizer.resolve(*sym)),
-                Field(sym) => format!("Field  {}", internalizer.resolve(*sym)),
-                Placeholder => "..".to_owned(),
-                Quote(quote) => format!("Quote  \"{}\"", with_written_out_escape_sequences(&quote)),
-                Binary { op, left, right } => format!(
-                    "{op} {{\n{}{}\n{}{} \n{}}}",
+
+        match node {
+            Binding { left, right } => {
+                format!(
+                    "= {{\n{}{}\n{}{} \n{}}}",
                     next_indentation.clone(),
-                    left.get_wrapper(tree)
-                        .display(tree, internalizer, next_indentation.clone()),
+                    tree[*left].display(tree, internalizer, next_indentation.clone()),
                     next_indentation.clone(),
-                    right
-                        .get_wrapper(tree)
-                        .display(tree, internalizer, next_indentation),
+                    tree[*right].display(tree, internalizer, next_indentation),
                     indentation
-                ),
-                Unary { op, val } => format!(
-                    "{op} {}",
-                    val.get_wrapper(tree).display(
-                        tree,
-                        internalizer,
-                        indentation
-                            + &op
-                                .to_string()
-                                .chars()
-                                .fold(String::new(), |acc, _| acc + " ")
-                            + " "
+                )
+            }
+            Literal {
+                val,
+                imaginary_coefficient,
+            } => format!("{val} {}", if *imaginary_coefficient { "i" } else { "()" }),
+            Ident(id) => format!("Id  {}", internalizer.resolve(*id)),
+            Lifetime(sym) => format!("Lifetime  {}", internalizer.resolve(*sym)),
+            Field(sym) => format!("Field  {}", internalizer.resolve(*sym)),
+            Placeholder => "..".to_owned(),
+            Quote(quote) => format!("Quote  \"{}\"", with_written_out_escape_sequences(quote)),
+            PrimitiveType(..) => todo!(),
+            Unit => "()".to_owned(),
+            Binary { op, left, right } => format!(
+                "{op} {{\n{}{}\n{}{} \n{}}}",
+                next_indentation.clone(),
+                tree[*left].display(tree, internalizer, next_indentation.clone()),
+                next_indentation.clone(),
+                tree[*right].display(tree, internalizer, next_indentation),
+                indentation
+            ),
+            Unary { op, val } => format!(
+                "{op} {}",
+                tree[*val].display(
+                    tree,
+                    internalizer,
+                    indentation
+                        + &op
+                            .to_string()
+                            .chars()
+                            .fold(String::new(), |acc, _| acc + " ")
+                        + " "
+                )
+            ),
+            Brackets {
+                kind: Bracket::Round,
+                content,
+            } => format!(
+                "({}{}{})",
+                DISPLAY_INDENTATION_NEG_1,
+                tree[*content].display(tree, internalizer, next_indentation),
+                DISPLAY_INDENTATION_NEG_1,
+            ),
+            Brackets {
+                kind: Bracket::Squared,
+                content,
+            } => format!(
+                "[{}{}{}]",
+                DISPLAY_INDENTATION_NEG_1,
+                tree[*content].display(tree, internalizer, next_indentation),
+                DISPLAY_INDENTATION_NEG_1,
+            ),
+            Brackets {
+                kind: Bracket::Curly,
+                content,
+            } => format!(
+                "{{{}{}{}}}",
+                DISPLAY_INDENTATION_NEG_1,
+                tree[*content].display(tree, internalizer, next_indentation),
+                DISPLAY_INDENTATION_NEG_1
+            ),
+            List(list) => {
+                if list.len() < 2 {
+                    format!(
+                        "[{}]",
+                        list.iter()
+                            .map(|item| {
+                                tree[*item].display(tree, internalizer, next_indentation.clone())
+                            })
+                            .collect::<String>()
                     )
-                ),
-                Brackets {
-                    kind: Bracket::Round,
-                    content,
-                } => format!(
-                    "({}{}{})",
-                    DISPLAY_INDENTATION_NEG_1,
-                    content
-                        .get_wrapper(tree)
-                        .display(tree, internalizer, next_indentation),
-                    DISPLAY_INDENTATION_NEG_1,
-                ),
-                Brackets {
-                    kind: Bracket::Squared,
-                    content,
-                } => format!(
-                    "[{}{}{}]",
-                    DISPLAY_INDENTATION_NEG_1,
-                    content
-                        .get_wrapper(tree)
-                        .display(tree, internalizer, next_indentation),
-                    DISPLAY_INDENTATION_NEG_1,
-                ),
-                Brackets {
-                    kind: Bracket::Curly,
-                    content,
-                } => format!(
-                    "{{{}{}{}}}",
-                    DISPLAY_INDENTATION_NEG_1,
-                    content
-                        .get_wrapper(tree)
-                        .display(tree, internalizer, next_indentation),
-                    DISPLAY_INDENTATION_NEG_1
-                ),
-                List(list) =>
-                    if list.len() < 2 {
-                        format!(
-                            "[{}]",
-                            list.iter()
-                                .map(|item| {
-                                    format!(
-                                        "{}",
-                                        item.get_wrapper(tree).display(
-                                            tree,
-                                            internalizer,
-                                            next_indentation.clone()
-                                        )
-                                    )
-                                })
-                                .collect::<String>()
-                        )
-                    } else {
-                        format!(
-                            "[\n{}{}]",
-                            list.iter()
-                                .map(|item| {
-                                    format!(
-                                        "{}{},\n",
-                                        next_indentation.clone(),
-                                        item.get_wrapper(tree).display(
-                                            tree,
-                                            internalizer,
-                                            next_indentation.clone()
-                                        )
-                                    )
-                                })
-                                .collect::<String>(),
-                            indentation
-                        )
-                    },
-                ColonStruct(content) =>
-                    if content.len() == 1 {
-                        format!(
-                            "{}",
-                            content[0].get_wrapper(tree).display(
-                                tree,
-                                internalizer,
-                                next_indentation.clone()
-                            )
-                        )
-                    } else {
-                        let mut list = content.iter();
-                        format!(
-                            "{}{}",
-                            list.next().unwrap().get_wrapper(tree).display(
-                                tree,
-                                internalizer,
-                                indentation.clone() + "  "
-                            ),
-                            list.map(|item| {
+                } else {
+                    format!(
+                        "[\n{}{}]",
+                        list.iter()
+                            .map(|item| {
                                 format!(
-                                    "\n{}: {}",
-                                    indentation.clone(),
-                                    item.get_wrapper(tree).display(
+                                    "{}{},\n",
+                                    next_indentation.clone(),
+                                    tree[*item].display(
                                         tree,
                                         internalizer,
-                                        indentation.clone() + "  "
+                                        next_indentation.clone()
                                     )
                                 )
                             })
                             .collect::<String>(),
-                        )
-                    },
-                Statements(content) =>
-                    if content.len() == 1 {
-                        format!(
-                            "{}",
-                            content[0].get_wrapper(tree).display(
-                                tree,
-                                internalizer,
-                                next_indentation.clone()
-                            )
-                        )
-                    } else {
-                        let mut string = String::new();
-                        if content.len() == 0 {
-                            string += &format!("\n{}", next_indentation,)
-                        } else {
-                            content
-                                .into_iter()
-                                .map(|node| &tree[*node])
-                                .for_each(|node| {
-                                    string += &format!(
-                                        "\n{}{}",
-                                        next_indentation,
-                                        &node.display(
-                                            &tree,
-                                            internalizer,
-                                            next_indentation.clone()
-                                        )
-                                    )
-                                });
-                        }
-                        format!("_{string}\n{indentation}¯")
-                    },
-                Chain { first, additions } => format!(
-                    "Chained [\n{}{}{}\n{}]",
-                    next_indentation.clone(),
-                    first.get_wrapper(tree).display(
+                        indentation
+                    )
+                }
+            }
+            ColonStruct(content) => {
+                if content.len() == 1 {
+                    tree[content[0]].display(tree, internalizer, next_indentation.clone())
+                } else {
+                    let mut list = content.iter();
+                    tree[*list.next().unwrap()].display(
                         tree,
                         internalizer,
-                        next_indentation.clone() + "   "
-                    ),
-                    additions
-                        .iter()
+                        indentation.clone() + "  ",
+                    ) + &list
                         .map(|item| {
-                            let op = item.0.as_str();
                             format!(
-                                "\n{}{}{}{}",
-                                next_indentation.clone(),
-                                op,
-                                (0..3 - op.chars().count()).map(|_| " ").collect::<String>(),
-                                item.1.get_wrapper(tree).display(
-                                    tree,
-                                    internalizer,
-                                    next_indentation.clone() + "   "
-                                )
+                                "\n{}: {}",
+                                indentation.clone(),
+                                tree[*item].display(tree, internalizer, indentation.clone() + "  ")
                             )
                         })
-                        .collect::<String>(),
-                    indentation
-                ),
-                Conditional {
-                    condition,
-                    looping,
-                    then_body,
-                    else_body,
-                } => format!(
-                    "{} {}\n{}=> {}{}",
-                    if *looping { "loop" } else { "if" },
-                    condition.get_wrapper(tree).display(
-                        tree,
-                        internalizer,
-                        indentation.clone() + "   "
-                    ),
-                    indentation.clone(),
-                    then_body.display(tree, internalizer, indentation.clone() + "   "),
-                    else_body
-                        .as_ref()
-                        .map_or("".to_owned(), |else_body| format!(
-                            "\n{}else {}",
-                            indentation.clone(),
-                            &else_body.display(tree, internalizer, indentation + "     "),
-                        ))
-                ),
-                Fields { val, fields } => format!(
-                    "{}{}",
-                    val.get_wrapper(tree)
-                        .display(tree, internalizer, indentation.clone()),
-                    fields
-                        .iter()
-                        .map(|sym| format!(" . {}", internalizer.resolve(*sym)))
                         .collect::<String>()
-                ),
-                _ => todo!(),
+                }
             }
-        )
+            Statements(content) => {
+                if content.len() == 1 {
+                    tree[content[0]].display(tree, internalizer, next_indentation.clone())
+                } else {
+                    let mut string = String::new();
+                    if content.len() == 0 {
+                        string += &format!("\n{next_indentation}")
+                    } else {
+                        content
+                            .into_iter()
+                            .map(|node| &tree[*node])
+                            .for_each(|node| {
+                                string += &format!(
+                                    "\n{}{}",
+                                    next_indentation,
+                                    &node.display(tree, internalizer, next_indentation.clone())
+                                )
+                            });
+                    }
+                    format!("_{string}\n{indentation}¯")
+                }
+            }
+            Chain { first, additions } => format!(
+                "Chained [\n{}{}{}\n{}]",
+                next_indentation.clone(),
+                tree[*first].display(tree, internalizer, next_indentation.clone() + "   "),
+                additions
+                    .iter()
+                    .map(|item| {
+                        let op = item.0.as_str();
+                        format!(
+                            "\n{}{}{}{}",
+                            next_indentation.clone(),
+                            op,
+                            (0..3 - op.chars().count()).map(|_| " ").collect::<String>(),
+                            tree[item.1].display(
+                                tree,
+                                internalizer,
+                                next_indentation.clone() + "   "
+                            )
+                        )
+                    })
+                    .collect::<String>(),
+                indentation
+            ),
+            Conditional {
+                condition,
+                looping,
+                then_body,
+                else_body,
+            } => format!(
+                "{} {}\n{}=> {}{}",
+                if *looping { "loop" } else { "if" },
+                tree[*condition].display(tree, internalizer, indentation.clone() + "   "),
+                indentation.clone(),
+                then_body.display(tree, internalizer, indentation.clone() + "   "),
+                else_body
+                    .as_ref()
+                    .map_or("".to_owned(), |else_body| format!(
+                        "\n{}else {}",
+                        indentation.clone(),
+                        &else_body.display(tree, internalizer, indentation + "     "),
+                    ))
+            ),
+            Fields { val, fields } => format!(
+                "{}{}",
+                tree[*val].display(tree, internalizer, indentation.clone()),
+                fields
+                    .iter()
+                    .map(|sym| format!(" . {}", internalizer.resolve(*sym)))
+                    .collect::<String>()
+            ),
+        }
     }
 }
 #[derive(Debug, Clone, PartialEq)]
@@ -379,7 +341,7 @@ impl<'src> Jump<NodeId<'src>> {
     ) -> String {
         use Jump::*;
         match self {
-            Continue { layers } => format!("continue * {}", layers),
+            Continue { layers } => format!("continue * {layers}"),
             Exit { layers, val } => format!(
                 "exit * {} {}",
                 layers,
@@ -391,14 +353,14 @@ impl<'src> Jump<NodeId<'src>> {
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Path<P: Clone + Debug + PartialEq + Eq> {
-    pub content: Option<P>,
+    pub content: P,
     pub jump: Option<Box<Jump<P>>>,
 }
 impl<P: Clone + Debug + PartialEq + Eq> Path<P> {
     #[inline]
-    pub fn new() -> Self {
+    pub fn new(content: P) -> Self {
         Self {
-            content: None,
+            content,
             jump: None,
         }
     }
@@ -409,9 +371,7 @@ impl<'src> Path<NodeId<'src>> {
         tree: &'src Tree<'src, W>,
     ) -> Path<Box<HeapNode<'src>>> {
         Path {
-            content: self
-                .content
-                .map(|content| Box::new(content.get(tree).unwrap().as_heap(tree))),
+            content: Box::new(self.content.get(tree).unwrap().as_heap(tree)),
             jump: self.jump.as_ref().map(|jump| Box::new(jump.as_heap(tree))),
         }
     }
@@ -421,21 +381,14 @@ impl<'src> Path<NodeId<'src>> {
         internalizer: &Internalizer<'src>,
         indentation: String,
     ) -> String {
-        format!(
-            "{}{}",
-            if let Some(content) = self.content {
-                content
-                    .get_wrapper::<W>(tree)
-                    .display(tree, internalizer, indentation.clone())
-            } else {
-                "{}".to_owned()
-            },
-            self.jump.as_ref().map_or("".to_owned(), |jump| format!(
-                "\n{}{}",
-                indentation.clone(),
-                jump.display(tree, internalizer, indentation)
-            ))
-        )
+        tree[self.content].display(tree, internalizer, indentation.clone())
+            + &self.jump.as_ref().map_or("".to_owned(), |jump| {
+                format!(
+                    "\n{}{}",
+                    indentation.clone(),
+                    jump.display(tree, internalizer, indentation)
+                )
+            })
     }
 }
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -470,6 +423,11 @@ pub enum Node<'src> {
         then_body: Path<NodeId<'src>>,
         else_body: Option<Path<NodeId<'src>>>,
     }, // if/loop condition then_body (else else_body)
+
+    Binding {
+        left: NodeId<'src>,
+        right: NodeId<'src>,
+    },
     // single values
     Literal {
         val: BigUint,
@@ -483,6 +441,7 @@ pub enum Node<'src> {
     Lifetime(Symbol<'src>),    // 'x
     Field(Symbol<'src>),       // .x
     PrimitiveType(Type<'src>), // u32, i32, c32, f32, ...
+    Unit,
 
     // multiple values
     List(comp::Vec<NodeId<'src>, 2>),        // a, b, c, d, ...
@@ -521,6 +480,11 @@ pub enum HeapNode<'src> {
         then_body: Path<Box<HeapNode<'src>>>,
         else_body: Option<Path<Box<HeapNode<'src>>>>,
     }, // if/loop condition then_body (else else_body)
+
+    Binding {
+        left: Box<HeapNode<'src>>,
+        right: Box<HeapNode<'src>>,
+    },
     // single values
     Literal {
         val: BigUint,
@@ -534,6 +498,7 @@ pub enum HeapNode<'src> {
     Lifetime(Symbol<'src>),    // 'x
     Field(Symbol<'src>),       // .x
     PrimitiveType(Type<'src>), // u32, i32, c32, f32, ...
+    Unit,
 
     // multiple values
     List(comp::Vec<Box<HeapNode<'src>>, 2>), // a, b, c, d, ...
@@ -582,9 +547,11 @@ impl<'src> Node<'src> {
                 condition: boxed(condition, tree),
                 looping: *looping,
                 then_body: then_body.as_heap(tree),
-                else_body: else_body
-                    .as_ref()
-                    .and_then(|else_body| Some(else_body.as_heap(tree))),
+                else_body: else_body.as_ref().map(|else_body| else_body.as_heap(tree)),
+            },
+            Self::Binding { left, right } => Binding {
+                left: boxed(left, tree),
+                right: boxed(right, tree),
             },
             Self::Literal {
                 val,
@@ -599,6 +566,7 @@ impl<'src> Node<'src> {
             Self::Lifetime(symbol) => Lifetime(*symbol),
             Self::Field(symbol) => Field(*symbol),
             Self::PrimitiveType(kind) => PrimitiveType(*kind),
+            Self::Unit => Unit,
             Self::List(content) => List(
                 content
                     .into_iter()
@@ -751,22 +719,7 @@ impl<'tree> NodeId<'tree> {
     ) -> &'borrow mut Option<Node<'tree>> {
         tree[self].node_mut()
     }
-    #[inline]
-    pub fn get_wrapper<'borrow, Wrapper: NodeWrapping<'tree>>(
-        self,
-        tree: &'borrow Tree<'tree, Wrapper>,
-    ) -> &'borrow Wrapper {
-        &tree[self]
-    }
-    #[inline]
-    pub fn get_wrapper_mut<Wrapper: NodeWrapping<'tree>>(
-        self,
-        tree: &'tree mut Tree<'tree, Wrapper>,
-    ) -> &'tree mut Wrapper {
-        &mut tree[self]
-    }
 }
-
 #[derive(Clone, Debug)]
 pub struct Tree<'src, W: NodeWrapping<'src>> {
     _marker: PhantomData<&'src ()>,

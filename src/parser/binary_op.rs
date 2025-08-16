@@ -1,7 +1,5 @@
 #[derive(Clone, PartialEq, Eq, Debug, Copy)]
 pub enum BinaryOp {
-    Equation, // a = b
-
     Write, // a := b
 
     OrAssign,   // a |= b
@@ -72,8 +70,6 @@ use BinaryOp::*;
 impl BinaryOp {
     pub fn as_str(self) -> &'static str {
         match self {
-            Equation => "=",
-
             Write => ":=",
 
             OrAssign => "|=",
@@ -131,20 +127,15 @@ impl BinaryOp {
             Cross => "><",
             Power => "^",
 
-            Index => "index",
-            App => "app",
+            Index => "-[-",
+            App => "-(-",
         }
     }
 
     pub fn is_chained(self) -> bool {
-        match self {
-            Equal => true,
-            NonEqual => true,
-            Smaller => true,
-            SmallerOrEqual => true,
-            Greater => true,
-            GreaterOrEqual => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            Equal | NonEqual | Smaller | SmallerOrEqual | Greater | GreaterOrEqual,
+        )
     }
 }

@@ -7,8 +7,7 @@ impl BinaryOp {
             // Inside of Brackets Comma => (0, 1)
             // Statements => (2, 3)
             // Colon Statements => (4, 5)
-            Equation => (6, 7),
-
+            // Binding => (6, 7)
             Write | OrAssign | NorAssign | XorAssign | XnorAssign | AndAssign | NandAssign
             | AddAssign | SubAssign | MulAssign | DivAssign | ModAssign | DotAssign
             | CrossAssign | PowerAssign | Swap => (10, 11),
@@ -40,9 +39,9 @@ impl UnaryOp {
     pub fn binding_pow(self) -> u8 {
         use UnaryOp::*;
         match self {
-            Neg => 115,
+            Neg | Pos => 115,
 
-            Ref | Deref | Not => 125,
+            Ref | Not => 125,
 
             Increment | Decrement => 10,
         }

@@ -49,9 +49,7 @@ pub struct Error<'src> {
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ErrorCode<'src> {
-    ExpectedValue {
-        found: &'src str,
-    },
+    ExpectedValue,
     ExpectedValueFoundEOF,
 
     DidntExpectValue {
@@ -231,11 +229,7 @@ impl Error<'_> {
                     "the operator {} is not known to the compiler",
                     [*op]
                 ),
-                ExpectedValue { found } => format_error!(
-                    self.section.to_string(path),
-                    "expected a value found {}",
-                    [found]
-                ),
+                ExpectedValue => format_error!(self.section.to_string(path), "expected a value"),
                 ExpectedValueFoundEOF => format_error!(
                     self.section.to_string(path),
                     "expected a value but the file ended"
@@ -439,6 +433,13 @@ impl Sub<Position> for Position {
         }
     }
 }
+impl Sub<Span> for Position {
+    type Output = Span;
+    fn sub(self, mut rhs: Span) -> Self::Output {
+        rhs.start = self;
+        rhs
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Span {
@@ -524,8 +525,16 @@ impl SubAssign<Span> for Span {
     }
 }
 
+impl Sub<Position> for Span {
+    type Output = Self;
+    fn sub(mut self, rhs: Position) -> Self::Output {
+        self.end = rhs;
+        self
+    }
+}
+
 impl Span {
-    fn to_string(&self, path: &Path) -> String {
+    fn to_string(self, path: &Path) -> String {
         match self.start.line == self.end.line {
             true => match self.start.collum == self.end.collum {
                 true => format!(

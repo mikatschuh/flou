@@ -3,7 +3,6 @@ use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::ops::{Deref, DerefMut, Index, IndexMut};
 use std::ptr::NonNull;
-use std::slice::Iter;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 // Die innere Struktur, die gezählt wird

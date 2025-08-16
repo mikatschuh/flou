@@ -1,6 +1,7 @@
-Maybe[T] | .some, .val T
-         | .none
-
+Maybe[T] (
+    | .some, .val T
+    | .none
+)
 
 Employee {
     .name str,

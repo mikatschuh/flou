@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::tree::NodeId;
 
 pub type OptSize = Option<usize>;
