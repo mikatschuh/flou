@@ -148,7 +148,7 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
             return Err(Some(&ident[i..]));
         }
 
-        let node = match divisor {
+        let div = match divisor {
             Some(divisor) => {
                 let left = self
                     .tree
@@ -169,18 +169,24 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
                 .add(W::new(span).with_node(Node::Literal { val: number })),
         };
         Ok(match exp {
-            Some(exp) => self.tree.add(
-                W::new(span)
-                    .with_node(Node::Binary {
-                        op: BinaryOp::Pow,
-                        left: node,
-                        right: exp,
-                    })
-                    .with_type(ty.into()),
-            ),
+            Some(exp) => {
+                let base = self.tree.add(W::new(span).with_node(Node::Literal {
+                    val: (base as u8).into(),
+                }));
+                let right = self.tree.add(W::new(span).with_node(Node::Binary {
+                    op: BinaryOp::Pow,
+                    left: base,
+                    right: exp,
+                }));
+                self.tree.add(W::new(span).with_node(Node::Binary {
+                    op: BinaryOp::Mul,
+                    left: div,
+                    right,
+                }))
+            }
             None => {
-                *self.tree[node].type_mut() = Some(ty.into());
-                node
+                *self.tree[div].type_mut() = Some(ty.into());
+                div
             }
         })
     }
