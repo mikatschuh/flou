@@ -73,7 +73,7 @@ impl<'src> Iterator for Tokenizer<'src> {
         if self.buffer.is_empty() {
             self.restock_tokens();
         }
-        self.buffer.pop()
+        self.buffer.pop_front()
     }
 }
 impl<'src> FusedIterator for Tokenizer<'src> {}
@@ -114,6 +114,12 @@ impl<'src> Tokenizer<'src> {
             self.restock_tokens();
         }
         self.buffer.peek()
+    }
+
+    /// Method for buffering a token. If the buffer is full (or this is called twice in a row)
+    /// a panic is invocated.
+    pub fn buffer(&mut self, token: Token<'src>) {
+        self.buffer.push_front(token)
     }
 }
 
@@ -189,7 +195,7 @@ impl<'src> Tokenizer<'src> {
         self.span.start = self.span.end;
         while let Some(c) = self.next_char() {
             if c == '"' {
-                self.buffer.push(Token {
+                self.buffer.push_back(Token {
                     span: self.span,
                     src: &self.text[start_i..self.next_i],
                     kind: TokenKind::Quote,
@@ -203,7 +209,7 @@ impl<'src> Tokenizer<'src> {
                 quote: &self.text[start_i..self.next_i],
             },
         );
-        self.buffer.push(Token {
+        self.buffer.push_back(Token {
             span: self.span,
             src: &self.text[start_i..self.next_i],
             kind: TokenKind::Quote,
@@ -212,12 +218,12 @@ impl<'src> Tokenizer<'src> {
 
     fn submit_current(&mut self, span: Span, end_i: usize) {
         match self.state {
-            State::Op(token) => self.buffer.push(Token {
+            State::Op(token) => self.buffer.push_back(Token {
                 span,
                 src: &self.text[self.start_i..end_i],
                 kind: token,
             }),
-            State::Id => self.buffer.push(Token {
+            State::Id => self.buffer.push_back(Token {
                 span,
                 kind: Keyword::from_str(&self.text[self.start_i..end_i])
                     .map(TokenKind::Keyword)

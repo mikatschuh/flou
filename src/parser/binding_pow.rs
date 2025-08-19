@@ -29,7 +29,7 @@ impl BinaryOp {
 
             Mul | Div | Mod | Dot | Cross => (110, 111),
             // Neg => 15
-            Power => (121, 120),
+            Pow => (121, 120),
 
             Index | App => (130, 131),
         }

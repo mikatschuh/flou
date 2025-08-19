@@ -37,6 +37,6 @@ impl<'src> Internalizer<'src> {
     }
 
     pub fn resolve(&self, sym: Symbol) -> &str {
-        &self.vec[sym.idx]
+        self.vec[sym.idx]
     }
 }

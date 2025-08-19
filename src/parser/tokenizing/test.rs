@@ -53,6 +53,7 @@ fn test() {
             Token::new(Span::at(1, 1, 1, 1), "a", Ident),
             Token::new(Span::at(3, 1, 3, 1), "+", Plus),
             Token::new(Span::at(5, 1, 5, 1), "b", Ident),
+            Token::new(Span::at(2, 2, 2, 2), "c", Ident),
         ]
     );
     /*let tokenizer = Tokenizer::new(EXAMPLE, errors);

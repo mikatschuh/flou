@@ -27,7 +27,7 @@ impl fmt::Display for UnaryOp {
             Increment => "++",
             Decrement => "--",
         };
-        write!(f, "{}", string)
+        write!(f, "{string}")
     }
 }
 

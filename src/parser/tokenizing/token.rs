@@ -15,12 +15,10 @@ pub struct Token<'src> {
 
 #[derive(PartialEq, Debug, Clone, Copy, Eq)]
 pub enum TokenKind {
-    Not,         // !
-    NotNot,      // !!
-    Punctuation, // .
-    Placeholder, // ..
-    Tick,        // '
-    Equal,       // =
+    Not,    // !
+    NotNot, // !!
+    Tick,   // '
+    Equal,  // =
 
     EqualEqual, // ==
     NotEqual,   // !=
@@ -106,8 +104,6 @@ impl Display for Token<'_> {
             match self.kind {
                 Not => "!",
                 NotNot => "!!",
-                Punctuation => ".",
-                Placeholder => "..",
                 Tick => "'",
                 Equal => "=",
 
@@ -204,7 +200,6 @@ impl TokenKind {
     pub fn new(c: char) -> Option<TokenKind> {
         match c {
             '!' => Some(Not),
-            '.' => Some(Punctuation),
             '\'' => Some(Tick),
             '=' => Some(Equal),
             '+' => Some(Plus),
@@ -248,10 +243,6 @@ impl TokenKind {
                 '&' => Some(And),
                 '<' => Some(Left),
                 '>' => Some(Right),
-                _ => None,
-            },
-            Punctuation => match c {
-                '.' => Some(Placeholder),
                 _ => None,
             },
             Equal => match c {
@@ -485,7 +476,7 @@ impl TokenKind {
             DotEqual => Some(DotAssign),
             Self::Cross => Some(Cross),
             CrossEqual => Some(CrossAssign),
-            Up => Some(Power),
+            Up => Some(Pow),
             UpEqual => Some(PowerAssign),
 
             Pipe => Some(BitOr),

@@ -21,13 +21,14 @@ use std::{
 
 pub trait NodeWrapping<'src>: Clone + Debug {
     fn new(span: Span) -> Self;
-    fn add_note(self, comment: Note) -> Self;
-    fn add_notes(self, comments: Vec<Note>) -> Self;
+    fn with_note(self, comment: Note<'src>) -> Self;
+    fn with_notes(self, comments: Vec<Note<'src>>) -> Self;
     fn with_type(self, typed: Type<'src>) -> Self;
     fn with_node(self, node: Node<'src>) -> Self;
-    fn node_mut(&mut self) -> &mut Option<Node<'src>>;
     fn node(&self) -> Option<&Node<'src>>;
-    fn typed(&self) -> Option<Type>;
+    fn node_mut(&mut self) -> &mut Option<Node<'src>>;
+    fn typed(&self) -> Option<&Type>;
+    fn type_mut(&mut self) -> &mut Option<Type<'src>>;
     fn span(&self) -> Span;
     fn span_mut(&mut self) -> &mut Span;
 
@@ -46,7 +47,7 @@ pub struct NodeWrapper<'src> {
     span: Span,
     node: Option<Node<'src>>,
     typed: Option<Type<'src>>,
-    notes: Vec<Note>,
+    notes: Vec<Note<'src>>,
 }
 
 impl<'src> NodeWrapping<'src> for NodeWrapper<'src> {
@@ -59,11 +60,11 @@ impl<'src> NodeWrapping<'src> for NodeWrapper<'src> {
         }
     }
     #[inline]
-    fn add_note(mut self, comment: Note) -> Self {
+    fn with_note(mut self, comment: Note<'src>) -> Self {
         self.notes.push(comment);
         self
     }
-    fn add_notes(mut self, mut comments: Vec<Note>) -> Self {
+    fn with_notes(mut self, mut comments: Vec<Note<'src>>) -> Self {
         self.notes.append(&mut comments);
         self
     }
@@ -86,8 +87,12 @@ impl<'src> NodeWrapping<'src> for NodeWrapper<'src> {
         self.node.as_ref()
     }
     #[inline]
-    fn typed(&self) -> Option<Type> {
-        self.typed
+    fn typed(&self) -> Option<&Type> {
+        self.typed.as_ref()
+    }
+    #[inline]
+    fn type_mut(&mut self) -> &mut Option<Type<'src>> {
+        &mut self.typed
     }
     #[inline]
     fn span(&self) -> Span {
@@ -120,10 +125,7 @@ impl<'src> NodeWrapping<'src> for NodeWrapper<'src> {
                     indentation
                 )
             }
-            Literal {
-                val,
-                imaginary_coefficient,
-            } => format!("{val} {}", if *imaginary_coefficient { "i" } else { "()" }),
+            Literal { val } => val.to_string(),
             Ident(id) => format!("Id  {}", internalizer.resolve(*id)),
             Lifetime(sym) => format!("Lifetime  {}", internalizer.resolve(*sym)),
             Field(sym) => format!("Field  {}", internalizer.resolve(*sym)),
@@ -305,8 +307,22 @@ impl<'src> NodeWrapping<'src> for NodeWrapper<'src> {
     }
 }
 #[derive(Debug, Clone, PartialEq)]
-pub enum Note {
+pub enum Note<'src> {
+    NumberParsingNote { invalid_suffix: &'src str },
     EscapeSequenceConfusion(EscapeSequenceConfusion),
+}
+
+impl<'src> From<&'src str> for Note<'src> {
+    fn from(value: &'src str) -> Self {
+        Self::NumberParsingNote {
+            invalid_suffix: value,
+        }
+    }
+}
+impl<'src> From<EscapeSequenceConfusion> for Note<'src> {
+    fn from(value: EscapeSequenceConfusion) -> Self {
+        Self::EscapeSequenceConfusion(value)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -431,7 +447,6 @@ pub enum Node<'src> {
     // single values
     Literal {
         val: BigUint,
-        imaginary_coefficient: bool,
     }, // (0(b/s/o/d/x))N(.N)((u/i/f/c)(0(b/s/o/d/x))N)(i)
     Quote(String), // "..."
     Placeholder,   // ..
@@ -488,7 +503,6 @@ pub enum HeapNode<'src> {
     // single values
     Literal {
         val: BigUint,
-        imaginary_coefficient: bool,
     }, // (0(b/s/o/d/x))N(.N)((u/i/f/c)(0(b/s/o/d/x))N)(i)
     Quote(String), // "..."
     Placeholder,   // ..
@@ -553,19 +567,13 @@ impl<'src> Node<'src> {
                 left: boxed(left, tree),
                 right: boxed(right, tree),
             },
-            Self::Literal {
-                val,
-                imaginary_coefficient,
-            } => Literal {
-                val: val.clone(),
-                imaginary_coefficient: *imaginary_coefficient,
-            },
+            Self::Literal { val } => Literal { val: val.clone() },
             Self::Quote(string) => Quote(string.clone()),
             Self::Placeholder => Placeholder,
             Self::Ident(symbol) => Ident(*symbol),
             Self::Lifetime(symbol) => Lifetime(*symbol),
             Self::Field(symbol) => Field(*symbol),
-            Self::PrimitiveType(kind) => PrimitiveType(*kind),
+            Self::PrimitiveType(kind) => PrimitiveType(kind.clone()),
             Self::Unit => Unit,
             Self::List(content) => List(
                 content

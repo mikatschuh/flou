@@ -55,7 +55,7 @@ pub enum BinaryOp {
 
     Dot,   // a · b
     Cross, // a >< b
-    Power, // a ^ b
+    Pow,   // a ^ b
 
     Index, // a[b]
     App,   // a(b)
@@ -125,7 +125,7 @@ impl BinaryOp {
 
             Dot => "·",
             Cross => "><",
-            Power => "^",
+            Pow => "^",
 
             Index => "-[-",
             App => "-(-",

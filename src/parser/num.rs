@@ -1,24 +1,30 @@
-#[allow(unused)]
-use std::{
-    path::{Path, PathBuf},
-    str::Chars,
-};
+use std::{iter::Peekable, str::CharIndices};
 
-use crate::tree::Bracket;
+use crate::parser::{
+    tokenizing::token::{Token, TokenKind},
+    Flags, Parser,
+};
 #[allow(unused)]
 use crate::{
     error::*,
     format_error_quote_arg,
     parser::binary_op::BinaryOp,
     tree::{Node, NodeId, NodeWrapper, NodeWrapping, Note, Tree},
-    typing::{NativNumber, Type},
+    typing::{NumberType, Type},
 };
-use colored::Colorize;
-use num::{pow, BigUint};
-use NativNumber::*;
+use num::BigUint;
+use NumberType::*;
 use Type::*;
 
+#[cfg(target_pointer_width = "64")]
 const SYSTEM_SIZE: usize = 64;
+
+#[cfg(target_pointer_width = "32")]
+const SYSTEM_SIZE: usize = 32;
+
+#[cfg(target_pointer_width = "16")]
+const SYSTEM_SIZE: usize = 16;
+
 macro_rules! cfg_system_width {
     ($expr32:expr, $expr64:expr) => {{
         #[cfg(target_pointer_width = "64")]
@@ -31,65 +37,7 @@ macro_rules! cfg_system_width {
         }
     }};
 }
-#[derive(Debug, Clone, PartialEq)]
-pub enum NumberParsingNote {
-    UnknownBasePrefix { prefix: char },
-    UnknownSuffix { suffix: String },
-    InvalidCharacter { character: char },
-    InvalidComplexSuffix { suffix: String },
-    InvalidSizeSpecifier { suffix: String, specifier: String },
-    TooBigSizeSpecifier { specifier: BigUint },
-}
-use NumberParsingNote::*;
-impl NumberParsingNote {
-    pub fn from_unknown_char(number_so_far: BigUint, c: char) -> Self {
-        // checks if number is zero
-        if let None = number_so_far.trailing_zeros() {
-            return UnknownBasePrefix { prefix: c };
-        } else {
-            return InvalidCharacter { character: c };
-        }
-    }
-    pub fn get_msg(self) -> String {
-        match self {
-            UnknownBasePrefix { prefix } => format!(
-                "this wasn't parsed as a number, because the base {} isn't known to the compiler",
-                format!(" \"0{}\" ", prefix).bold()
-            ),
-            UnknownSuffix { suffix } => format!(
-                "this wasn't parsed as a number, because the suffix {} is unknown to the compiler",
-                format_error_arg!(suffix),
-            ),
-            InvalidCharacter { character } => {
-                if let 'a' | 'b' | 'c' | 'd' | 'e' | 'f' = character {
-                    format!(
-                    "this wasn't parsed as a number, because it contained a non-base-conform character, {} to type a hexadecimal literal prefix it with {}",
-                    format!(" '{}' ", character).bold(), format!(" '0x' ").bold()
-                )
-                } else {
-                    format!(
-                    "this wasn't parsed as a number, because it contained a non-base-conform character, {}",
-                    format!(" '{}' ", character).bold()
-                )
-                }
-            }
-            InvalidComplexSuffix { suffix } => format!(
-                "this wasn't parsed as a number, because the suffix {} wasn't a valid complex-number-suffix",
-                format_error_quote_arg!(suffix)
-            ),
-            InvalidSizeSpecifier { suffix, specifier } => format!(
-                "this wasn't parsed as a number, because the size specifier {} is invalid, valid forms are {} and {}",
-                format_error_arg!(specifier),
-                format_error_arg!(suffix, 'x'),
-                format_error_arg!(suffix, 'N'),
-            ),
-            TooBigSizeSpecifier { specifier } => format!(
-                "this wasn't parsed as a number, because the given number_width of {} is too big",
-                format_error_arg!(specifier)
-            ),
-        }
-    }
-}
+
 #[derive(Clone, Copy, PartialEq)]
 enum Base {
     Binary = 2,
@@ -99,254 +47,222 @@ enum Base {
     Dozenal = 12,
     Hexadecimal = 16,
 }
-/// Function to parse any literal into an AST-Node. The numbers have three parts:
-/// BASE_PREFIX - CONTENT - IMAGINARY_SUFFIX | SIZE_SUFFIX
-/// note: Underscores can be used throughout the hole content for readability
-/// To indicate a base will be given, the number shall start with 0. After the 0, the
-/// base specifier comes:
-/// ```
-/// b => Binary
-/// s => Seximal
-/// o => Octal
-/// d => Dozenal
-/// x => Hexadecimal
-/// ```
-/// If instead of a base specifier, a number digit is given, its assumed that the leading zero
-/// was just a typo. The number will be continued regulary.
-pub fn value_to_node<'a, Wrapper: NodeWrapping>(
-    name: &'a str,
-    pos: Span,
-    tree: &mut Tree<Wrapper>,
-) -> Wrapper {
-    let mut str = &name[..];
-    let is_imaginary = if let Some('i') = last_char_utf8(str) {
-        str = &str[0..str.len() - 1]; // cut out the last char
-        true
-    } else {
-        false
-    };
-    let mut divisor: Option<usize> = None;
-    match match parse_integer(None, str.chars()) {
-        Ok(Ok((number, suffix))) => Ok((number.1, suffix)),
-        Ok(Err((integer, base, c, chars))) => {
-            || -> Result<(BigUint, Type), Option<Note>> {
-                if c == '.' {
-                    // check if there wasnt a suffix already, and if the character is a dot
-                    let ((leading_zeros, after_comma), integer_type) =
-                        match parse_integer(Some(base), chars.clone())? {
-                            Ok((number, suffix)) => (number, suffix),
-                            Err(_) => return Err(None),
-                        };
-                    let after_comma_len =
-                        after_comma.to_radix_le(base as u32).len() + leading_zeros;
-                    divisor = Some(pow(base as usize, after_comma_len));
-                    Ok((
-                        integer.1 * BigUint::from(pow(base as u32, after_comma_len)) + after_comma,
-                        integer_type,
-                    ))
-                } else {
-                    Err(Some(Note::NumberParsingNote(
-                        NumberParsingNote::from_unknown_char(integer.1, c),
-                    )))
-                }
-            }()
-        }
-        Err(note) => Err(note),
-    } {
-        Ok((number, suffix)) => match divisor {
-            Some(divisor) => {
-                let number = tree.add(Wrapper::new(
-                    pos,
-                    Node::Literal {
-                        val: number,
-                        imaginary_coefficient: is_imaginary,
-                    },
-                ));
-                let divisor = tree.add(Wrapper::new(
-                    pos,
-                    Node::Literal {
-                        val: divisor.into(),
-                        imaginary_coefficient: false,
-                    },
-                ));
-                let ratio = tree.add(
-                    Wrapper::new(
-                        pos,
-                        Node::BinaryOp {
-                            op: BinaryOp::Div,
-                            left: number,
-                            right: divisor,
-                        },
-                    )
-                    .with_type(suffix),
-                );
-                Wrapper::new(
-                    pos,
-                    Node::Brackets {
-                        kind: Bracket::Round,
-                        content: ratio,
-                    },
-                )
-            }
-            None => Wrapper::new(
-                pos,
-                Node::Literal {
-                    val: number,
-                    imaginary_coefficient: is_imaginary,
-                },
-            )
-            .with_type(suffix),
-        },
-        Err(Some(comment)) => Wrapper::new(pos, Node::Ident(name.to_owned())).add_note(comment),
-        Err(None) => Wrapper::new(pos, Node::Ident(name.to_owned())),
-    }
-}
-fn parse_integer(
-    fixed_base: Option<Base>,
-    chars: Chars,
-) -> Result<Result<((usize, BigUint), Type), ((usize, BigUint), Base, char, Chars)>, Option<Note>> {
-    match parse_digits(fixed_base, chars) {
-        Ok(number) => match number {
-            Some(number) => Ok(Ok((number, Number(Arbitrary)))),
-            None => Err(None),
-        },
-        Err((current, base, mut c, mut chars)) => {
-            if let Some(number) = current {
-                // parse type suffix
-                if let 'u' | 'i' | 'f' | 'c' = c {
-                    let mut str_suffix = c.to_string();
-                    let complex = if c == 'c' {
-                        if let Some(next) = chars.next() {
-                            c = next;
-                            str_suffix.push(c);
-                            true
-                        } else {
-                            return Ok(Ok((number, ComplexNumber(Arbitrary))));
-                        }
-                    } else {
-                        false
-                    };
-                    let size: Option<usize> = match match parse_digits(None, chars.clone()) {
-                        Ok(number) => number,
-                        Err((_, _, non_numerical_char, _)) => {
-                            if non_numerical_char == 'x' && chars.clone().count() == 1 {
-                                Some((0, SYSTEM_SIZE.into()))
-                            // handle system size
-                            } else {
-                                return Err(Some(Note::NumberParsingNote(InvalidSizeSpecifier {
-                                    suffix: str_suffix,
-                                    specifier: chars.clone().collect(),
-                                })));
-                            }
-                        }
-                    } {
-                        Some(big_int) => {
-                            assert_eq!(BigUint::from(0u32).to_u32_digits(), vec![0]);
-                            let digits = cfg_system_width!(
-                                big_int.iter_u32_digits(),
-                                big_int.1.iter_u64_digits()
-                            )
-                            .collect::<Vec<_>>();
-                            if digits.len() != 1 {
-                                return Err(Some(Note::NumberParsingNote(TooBigSizeSpecifier {
-                                    specifier: big_int.1,
-                                })));
-                            }
-                            Some(digits[0] as usize)
-                        }
-                        None => None,
-                    };
-                    let number_type = match c {
-                        'u' => Unsigned(size), // unsigned
-                        'i' => Signed(size),   // signed
-                        'f' => Float(size),    // floating point type
-                        _ => {
-                            return if complex {
-                                Err(Some(Note::NumberParsingNote(InvalidComplexSuffix {
-                                    suffix: format!("c{}", chars.collect::<String>()),
-                                })))
-                            } else {
-                                Err(Some(Note::NumberParsingNote(UnknownSuffix {
-                                    suffix: format!("{}{}", c, chars.collect::<String>()),
-                                })))
-                            }
-                        }
-                    };
-                    Ok(Ok((
-                        number,
-                        if complex {
-                            ComplexNumber(number_type)
-                        } else {
-                            Number(number_type)
-                        },
-                    )))
-                } else {
-                    Ok(Err((number, base, c, chars)))
-                }
-            } else {
-                return Err(None);
-            }
-        }
-    }
-}
-/// A general purpose function for unsigned integer parsing.
-/// - "_" can be used in numbers for readability reasons
-/// If the function cannot parse a character, it calls the fall_back with the current number,
-/// if existing, the problematic char and the remaining chars and returns the result. If the
-/// string didnt contain a number nor anything other (for example: "_", "" or "___") None is returned.
-fn parse_digits(
-    fixed_base: Option<Base>,
-    mut chars: Chars,
-) -> Result<Option<(usize, BigUint)>, (Option<(usize, BigUint)>, Base, char, Chars)> {
-    let mut result: Option<(usize, BigUint)> = None;
+use Base::*;
 
-    let mut base = Base::Decimal; // default to decimal
-    if let Some(given_base) = fixed_base {
-        base = given_base
+impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
+    /// Function to parse any literal into an AST-Node.
+    /// Format:
+    /// - whitespaces are only for formatting and precedence
+    /// - content in brackets is optional
+    /// ```
+    /// N = (0  b/s/o/d/x) DIGITS
+    ///
+    /// numbers = N  .DIGITS  ((u/i/f N) / e / i)
+    /// ```
+    /// Meaning of prefixes:
+    /// ```
+    /// b => Binary
+    /// s => Seximal
+    /// o => Octal
+    /// d => Dozenal
+    /// x => Hexadecimal
+    /// ```
+    /// If instead of a base specifier, a digit is given, its assumed that the leading zero
+    /// was just a typo. The number will be continued regulary.
+    pub(super) fn convert_to_num_if_possible<'caller>(
+        &mut self,
+        span: Span,
+        ident: &'src str,
+        flags: Flags<'src, 'caller>,
+    ) -> NodeId<'src> {
+        debug_assert_ne!(ident, "");
+        debug_assert_ne!(ident, "..");
+
+        self.try_to_make_number(span, ident, flags)
+            .unwrap_or_else(|e| match e {
+                Some(suffix) => self.tree.add(
+                    W::new(span)
+                        .with_node(Node::Ident(self.internalizer.get(ident)))
+                        .with_note(suffix.into()),
+                ),
+                None => self
+                    .tree
+                    .add(W::new(span).with_node(Node::Ident(self.internalizer.get(ident)))),
+            })
     }
 
-    while let Some(c) = chars.next() {
-        if let Some(ref mut unwrapped_result) = result {
-            if let Some(num) = c.to_digit(base as u32) {
-                if unwrapped_result.1 == 0u32.into() && num == 0 {
-                    unwrapped_result.0 += 1;
-                }
-                unwrapped_result.1 =
-                    &unwrapped_result.1 * &BigUint::from(base as usize) + BigUint::from(num)
-            } else
-            // the character doesnt match the base
-            if c != '_' {
-                return Err((result, base, c, chars)); // call the fallback
-            }
-        } else if c == '0' && fixed_base == None {
-            let Some(second_char) = chars.next() else {
-                return Ok(Some((1, 0_u32.into()))); // its just zero
-            };
-            match second_char {
-                'b' => base = Base::Binary,
-                's' => base = Base::Seximal,
-                'o' => base = Base::Octal,
-                'd' => base = Base::Dozenal,
-                'x' => base = Base::Hexadecimal,
-                _ => {
-                    if let Some(num) = second_char.to_digit(base as u32) {
-                        result = Some((1, num.into()));
-                    } else if second_char != '_' {
-                        return Err((result, base, c, chars)); // call the fallback
-                    }
+    fn try_to_make_number<'caller>(
+        &mut self,
+        span: Span,
+        ident: &'src str,
+        flags: Flags<'src, 'caller>,
+    ) -> Result<NodeId<'src>, Option<&'src str>> {
+        let divisor_equation = |base, digits_after_dot| -> BigUint {
+            (base as u8).pow(digits_after_dot as u32).into()
+        };
+
+        let mut chars = ident.char_indices().peekable();
+        debug_assert_ne!(chars.peek().unwrap().1, '.');
+
+        let (base, mut number) = match parse_number(&mut chars) {
+            (_, None) => return Err(None),
+            (base, Some(number)) => (base, number),
+        };
+        let divisor = if let Some((_, '.')) = chars.peek() {
+            chars.next();
+            match parse_digits(base as u32, &mut chars) {
+                (_, None) => None,
+                (num_digits, Some(after_dot)) => {
+                    let divisor = divisor_equation(base, num_digits);
+                    number *= divisor.clone();
+                    number += after_dot;
+                    Some(divisor)
                 }
             }
         } else {
-            if let Some(num) = c.to_digit(base as u32) {
-                result = Some((if num == 0 { 1 } else { 0 }, num.into()));
-                // covering cases: x | ___x_____
-            } else {
-                return Err((result, base, c, chars)); // call the fallback
+            None
+        };
+        let exp = if let Some((i, 'e')) = chars.peek() {
+            let i = *i;
+            chars.next();
+            if let Some((i, _)) = chars.peek() {
+                self.tokenizer.buffer(Token {
+                    span,
+                    src: &ident[*i..],
+                    kind: TokenKind::Ident,
+                });
+                chars = "".char_indices().peekable();
             }
+            if let Some(exp) = self.parse_expr(u8::MAX, flags) {
+                Some(exp)
+            } else {
+                return Err(Some(&ident[i..]));
+            }
+        } else {
+            None
+        };
+
+        let ty = parse_type_suffix(&mut chars);
+
+        if let Some((i, _)) = chars.next() {
+            return Err(Some(&ident[i..]));
+        }
+
+        let node = match divisor {
+            Some(divisor) => {
+                let left = self
+                    .tree
+                    .add(W::new(span).with_node(Node::Literal { val: number }));
+
+                let right = self
+                    .tree
+                    .add(W::new(span).with_node(Node::Literal { val: divisor }));
+
+                self.tree.add(W::new(span).with_node(Node::Binary {
+                    op: BinaryOp::Div,
+                    left,
+                    right,
+                }))
+            }
+            None => self
+                .tree
+                .add(W::new(span).with_node(Node::Literal { val: number })),
+        };
+        Ok(match exp {
+            Some(exp) => self.tree.add(
+                W::new(span)
+                    .with_node(Node::Binary {
+                        op: BinaryOp::Pow,
+                        left: node,
+                        right: exp,
+                    })
+                    .with_type(ty.into()),
+            ),
+            None => {
+                *self.tree[node].type_mut() = Some(ty.into());
+                node
+            }
+        })
+    }
+}
+
+/// Defaults to Decimal
+fn parse_base_prefix(chars: &mut Peekable<CharIndices>) -> Base {
+    if let Some((_, '0')) = chars.peek() {
+        let mut base_chars = chars.clone();
+        base_chars.next();
+        let Some((_, second)) = base_chars.peek() else {
+            return Decimal;
+        };
+        if let 'b' | 's' | 'o' | 'd' | 'x' | '_' = *second {
+            chars.next();
+            return match chars.next().unwrap().1 {
+                'b' => Binary,
+                's' => Seximal,
+                'o' => Octal,
+                'd' => Dozenal,
+                'x' => Hexadecimal,
+                '_' => Decimal,
+                _ => unreachable!(),
+            };
         }
     }
-    Ok(result)
+    Decimal
 }
+
+fn parse_digits(radix: u32, chars: &mut Peekable<CharIndices>) -> (usize, Option<BigUint>) {
+    let mut num_digits = 0;
+    let mut number: Option<BigUint> = None;
+
+    while let Some((_, c)) = chars.peek() {
+        if let Some(digit) = c.to_digit(radix) {
+            if let Some(ref mut number) = number {
+                chars.next();
+                *number *= BigUint::from(radix);
+                *number |= BigUint::from(digit);
+                num_digits += 1;
+            } else {
+                chars.next();
+                number = Some(BigUint::from(digit));
+                num_digits += 1;
+            }
+        } else {
+            return (num_digits, number);
+        }
+    }
+    (num_digits, number)
+}
+
+fn parse_number(chars: &mut Peekable<CharIndices>) -> (Base, Option<BigUint>) {
+    let base = parse_base_prefix(chars);
+    let (_, number) = parse_digits(base as u32, chars);
+    (base, number)
+}
+
+fn parse_type_suffix(chars: &mut Peekable<CharIndices>) -> NumberType {
+    let Some((_, c)) = chars.peek() else {
+        return Arbitrary;
+    };
+    match c {
+        'u' => {
+            chars.next();
+            let number = parse_number(chars).1;
+            Unsigned(number)
+        }
+        'i' => {
+            chars.next();
+            let number = parse_number(chars).1;
+            Signed(number)
+        }
+        'f' => {
+            chars.next();
+            let number = parse_number(chars).1;
+            Float(number)
+        }
+        _ => Arbitrary,
+    }
+}
+
 fn last_char_utf8(s: &str) -> Option<char> {
     let bytes = s.as_bytes();
     let mut i = bytes.len();
@@ -361,60 +277,4 @@ fn last_char_utf8(s: &str) -> Option<char> {
     }
 
     None
-}
-#[test]
-fn test_number_parsing() {
-    let mut node_buffer = Tree::<NodeWrapper>::new();
-    let pos = Span::beginning();
-    let tests = [(
-        "1",
-        NodeWrapper::new(
-            pos,
-            Node::Literal {
-                val: 1u32.into(),
-                imaginary_coefficient: false,
-            },
-        )
-        .with_type(Number(NativNumber::Arbitrary)),
-        "0xA",
-        NodeWrapper::new(
-            pos,
-            Node::Literal {
-                val: 10u32.into(),
-                imaginary_coefficient: false,
-            },
-        )
-        .with_type(Number(NativNumber::Arbitrary)),
-        "0d10",
-        NodeWrapper::new(
-            pos,
-            Node::Literal {
-                val: 12u32.into(),
-                imaginary_coefficient: false,
-            },
-        )
-        .with_type(Number(NativNumber::Arbitrary)),
-        "0s100_u0x27_i",
-        NodeWrapper::new(
-            pos,
-            Node::Literal {
-                val: 36u32.into(),
-                imaginary_coefficient: true,
-            },
-        )
-        .with_type(Number(NativNumber::Unsigned(Some(39)))),
-        "0b100_ui",
-        NodeWrapper::new(
-            pos,
-            Node::Literal {
-                val: 4u32.into(),
-                imaginary_coefficient: true,
-            },
-        )
-        .with_type(Number(NativNumber::Unsigned(None))),
-    )];
-    for test in tests {
-        let node = value_to_node(test.0.into(), pos, &mut node_buffer);
-        assert_eq!(node, test.1);
-    }
 }

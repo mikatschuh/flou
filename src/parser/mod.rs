@@ -14,20 +14,17 @@ use tokenizing::{
     Tokenizer,
 };
 
-#[allow(dead_code)]
 pub mod binary_op;
 mod binding_pow;
-#[allow(dead_code)]
 pub mod intern;
 #[allow(dead_code)]
 pub mod item;
 #[allow(dead_code)]
 pub mod keyword;
+pub mod num;
 #[cfg(test)]
 mod test;
-#[allow(dead_code)]
 pub mod tokenizing;
-#[allow(dead_code)]
 pub mod unary_op;
 
 #[macro_export]
@@ -102,20 +99,24 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
             Ident => {
                 let Token { span, src, .. } = self.tokenizer.next().unwrap();
                 start = span.start;
-                self.tree
-                    .add(W::new(span).with_node(Node::Ident(self.internalizer.get(src))))
-            }
-            Placeholder => {
-                let Token { span, .. } = self.tokenizer.next().unwrap();
-                start = span.start;
-                self.tree.add(W::new(span).with_node(Node::Placeholder))
+                if src.starts_with('.') {
+                    if let ".." = src {
+                        self.tree.add(W::new(span).with_node(Node::Placeholder))
+                    } else {
+                        self.tree.add(W::new(span).with_node(Node::Field(
+                            self.internalizer.get(src.strip_prefix('.').unwrap()),
+                        )))
+                    }
+                } else {
+                    self.convert_to_num_if_possible(span, src, flags)
+                }
             }
             Quote => {
                 let Token { span, src, .. } = self.tokenizer.next().unwrap();
                 start = span.start;
                 let (string, confusions) = resolve_escape_sequences(src);
                 self.tree.add(
-                    W::new(span).with_node(Node::Quote(string)).add_notes(
+                    W::new(span).with_node(Node::Quote(string)).with_notes(
                         confusions
                             .into_iter()
                             .map(Note::EscapeSequenceConfusion)
@@ -213,15 +214,6 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
                 self.tree
                     .add(W::new(start - ident_span).with_node(Node::Lifetime(symbol)))
             }
-            Punctuation => {
-                let Token { span: dot_span, .. } = self.tokenizer.next().unwrap();
-                start = dot_span.start;
-                let Some((ident_span, symbol)) = self.pop_identifier(dot_span.end + 1) else {
-                    return self.parse_expr(min_bp, flags);
-                };
-                self.tree
-                    .add(W::new(dot_span - ident_span).with_node(Node::Field(symbol)))
-            }
             Open(own_bracket) => {
                 let Token { span, .. } = self.tokenizer.next().unwrap();
                 start = span.start;
@@ -296,30 +288,6 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
                 lhs = self.tree.add(
                     W::new(start - self.tree[*chain.last()].span()).with_node(Node::List(chain)),
                 )
-            } else if let Punctuation = kind {
-                let Token {
-                    span: first_span, ..
-                } = self.tokenizer.next().unwrap();
-                let mut end = first_span.start;
-                let Some((.., symbol)) = self.pop_identifier(first_span.end + 1) else {
-                    return self.parse_expr(min_bp, flags);
-                };
-                let mut chain = comp::Vec::new([symbol]);
-                while let Some(Token {
-                    kind: Punctuation, ..
-                }) = self.tokenizer.peek()
-                {
-                    let Token { span: dot_span, .. } = self.tokenizer.next().unwrap();
-                    let Some((span, symbol)) = self.pop_identifier(dot_span.end + 1) else {
-                        break;
-                    };
-                    chain.push(symbol);
-                    end = span.end
-                }
-                lhs = self.tree.add(W::new(start - end).with_node(Node::Fields {
-                    val: lhs,
-                    fields: chain,
-                }))
             } else if let Equal = kind {
                 let bp = (6, 7);
                 if bp.0 < min_bp {

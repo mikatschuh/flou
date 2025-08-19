@@ -216,7 +216,16 @@ impl<T, const CAP: usize, const CAP_LOG_2: usize> ArrayQueue<T, CAP, CAP_LOG_2> 
         }
     }
 
-    pub fn push(&mut self, val: T) {
+    pub fn push_front(&mut self, val: T) {
+        debug_assert!(self.len < CAP);
+        self.start = bitwise_mod(self.start.overflowing_sub(1).0, CAP_LOG_2);
+        self.len += 1;
+        unsafe {
+            *self.buffer[self.start].as_mut_ptr() = val;
+        }
+    }
+
+    pub fn push_back(&mut self, val: T) {
         debug_assert!(self.len < CAP);
         let initial_len = self.len;
         self.len += 1;
@@ -224,12 +233,25 @@ impl<T, const CAP: usize, const CAP_LOG_2: usize> ArrayQueue<T, CAP, CAP_LOG_2> 
         self[initial_len] = val;
     }
 
-    pub fn pop(&mut self) -> Option<T> {
+    pub fn pop_front(&mut self) -> Option<T> {
         if self.len > 0 {
             let mut last = MaybeUninit::uninit();
             std::mem::swap(&mut last, &mut self.buffer[self.start]); // extract the first element
 
-            self.start = bitwise_mod(self.start + 1, CAP_LOG_2);
+            self.start = bitwise_mod(self.start.overflowing_add(1).0, CAP_LOG_2);
+            self.len -= 1;
+
+            Some(unsafe { last.assume_init() })
+        } else {
+            None
+        }
+    }
+
+    pub fn pop_back(&mut self) -> Option<T> {
+        if self.len > 0 {
+            let mut last = MaybeUninit::uninit();
+            std::mem::swap(&mut last, &mut self.buffer[self.start]); // extract the first element
+
             self.len -= 1;
 
             Some(unsafe { last.assume_init() })
@@ -317,17 +339,17 @@ fn test() {
     assert_eq!(queue, []);
     assert_eq!(queue.peek(), None);
 
-    queue.push(1);
+    queue.push_back(1);
     assert_eq!(queue, [1]);
 
-    queue.push(2);
-    queue.push(3);
+    queue.push_back(2);
+    queue.push_back(3);
     assert_eq!(queue, [1, 2, 3]);
     assert_eq!(queue.peek(), Some(&1));
 
-    assert_eq!(queue.pop(), Some(1));
-    assert_eq!(queue.pop(), Some(2));
-    assert_eq!(queue.pop(), Some(3));
+    assert_eq!(queue.pop_front(), Some(1));
+    assert_eq!(queue.pop_front(), Some(2));
+    assert_eq!(queue.pop_front(), Some(3));
 
     // wrapping test:
 
@@ -335,17 +357,17 @@ fn test() {
     assert_eq!(queue, []);
     assert_eq!(queue.peek(), None);
 
-    queue.push(1);
+    queue.push_back(1);
     assert_eq!(queue, [1]);
 
-    queue.push(2);
+    queue.push_back(2);
     assert_eq!(queue, [1, 2]);
     assert_eq!(queue.peek(), Some(&1));
 
-    assert_eq!(queue.pop(), Some(1));
+    assert_eq!(queue.pop_front(), Some(1));
 
-    queue.push(3);
+    queue.push_back(3);
     assert_eq!(queue, [2, 3]);
 
-    assert_eq!(queue.pop(), Some(2));
+    assert_eq!(queue.pop_front(), Some(2));
 }
