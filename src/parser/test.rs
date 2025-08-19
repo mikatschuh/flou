@@ -66,7 +66,7 @@ macro_rules! node {
 
     // Literal
     [$inter:expr, (lit, $num:expr)] => {
-        Box::new(HeapNode::Literal{val: $num})
+        Box::new(HeapNode::Literal{val: $num.into()})
     };
 
     // Unary Ops
@@ -152,18 +152,14 @@ fn test() {
         ),
         node!(
             internalizer,
-            (
-                stmts,
-                ("a", Write, (lit, 1u8.into())),
-                ("b", Write, (lit, 0u8.into()))
-            )
+            (stmts, ("a", Write, (lit, 1u8)), ("b", Write, (lit, 0u8)))
         )
     );
 }
 #[test]
 fn test_number_parsing() {
     let errors = Rc::new(Errors::empty(Path::new("example.flou")));
-    let mut internalizer = Rc::new(Internalizer::new());
+    let internalizer = Rc::new(Internalizer::new());
 
     macro_rules! parse {
         ($text:expr) => {{
@@ -177,5 +173,5 @@ fn test_number_parsing() {
         }};
     }
 
-    assert_eq!(parse!("10"), node![internalizer, (lit, 10u8.into())]);
+    assert_eq!(parse!("10"), node![internalizer, (lit, 10u8)]);
 }

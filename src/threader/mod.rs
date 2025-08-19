@@ -22,16 +22,16 @@ impl Threadpool {
         }
     }
     pub fn launch(&mut self, num_threads: Option<usize>) {
-        for i in 0..num_threads.unwrap_or_else(|| num_cpus::get()) {
+        for i in 0..num_threads.unwrap_or_else(num_cpus::get) {
             let task_queue = self.task_queue.clone();
 
-            let Ok(join_handle) = Builder::new().name(format!("{}", i)).spawn(move || {
+            let Ok(join_handle) = Builder::new().name(format!("{i}")).spawn(move || {
                 while let Some(task) = task_queue.steal().success() {
                     task.run(|new_task| task_queue.push(new_task))?;
                 }
                 Ok(())
             }) else {
-                println!("thread {} couldnt been spawned", i);
+                println!("thread {i} couldnt been spawned");
                 continue;
             };
 

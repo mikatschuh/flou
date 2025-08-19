@@ -3,7 +3,7 @@ use crate::{error::CliError, format_time, parser::parse};
 use std::{
     ffi::OsString,
     fs::*,
-    io::{Read, Seek, SeekFrom, Write},
+    io::Read,
     path::{Path, PathBuf},
     time::{Instant, UNIX_EPOCH},
 };

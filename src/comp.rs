@@ -33,7 +33,7 @@ impl<T, const MIN: usize> Vec<T, MIN> {
     #[inline]
     pub fn penultimate(&self) -> Option<&T> {
         let len = self.0.len();
-        if len >= MIN + 1 {
+        if len > MIN {
             Some(&self.0[len - 2])
         } else {
             None
@@ -113,6 +113,6 @@ impl<T, const MIN: usize> IndexMut<usize> for Vec<T, MIN> {
 #[macro_export]
 macro_rules! res_vec {
     [$($arg:expr),*] => {
-        crate::comp::Vec::from([$($arg), *])
+        $crate::comp::Vec::from([$($arg), *])
     };
 }

@@ -1,5 +1,3 @@
-use std::{iter::Peekable, str::CharIndices};
-
 use crate::parser::{
     tokenizing::token::{Token, TokenKind},
     Flags, Parser,
@@ -10,11 +8,12 @@ use crate::{
     format_error_quote_arg,
     parser::binary_op::BinaryOp,
     tree::{Node, NodeId, NodeWrapper, NodeWrapping, Note, Tree},
-    typing::{NumberType, Type},
+    typing::{
+        NumberKind::{self, *},
+        NumberType, Type,
+    },
 };
 use num::BigUint;
-use NumberType::*;
-use Type::*;
 
 #[cfg(target_pointer_width = "64")]
 const SYSTEM_SIZE: usize = 64;
@@ -25,20 +24,7 @@ const SYSTEM_SIZE: usize = 32;
 #[cfg(target_pointer_width = "16")]
 const SYSTEM_SIZE: usize = 16;
 
-macro_rules! cfg_system_width {
-    ($expr32:expr, $expr64:expr) => {{
-        #[cfg(target_pointer_width = "64")]
-        {
-            $expr64
-        }
-        #[cfg(not(target_pointer_width = "64"))]
-        {
-            $expr32
-        }
-    }};
-}
-
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Base {
     Binary = 2,
     Seximal = 6,
@@ -57,7 +43,7 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
     /// ```
     /// N = (0  b/s/o/d/x) DIGITS
     ///
-    /// numbers = N  .DIGITS  ((u/i/f N) / e / i)
+    /// numbers = N  .DIGITS  ((u/i/f N) / e / p)
     /// ```
     /// Meaning of prefixes:
     /// ```
@@ -101,54 +87,52 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
             (base as u8).pow(digits_after_dot as u32).into()
         };
 
-        let mut chars = ident.char_indices().peekable();
-        debug_assert_ne!(chars.peek().unwrap().1, '.');
+        let mut num = ident.as_bytes();
 
-        let (base, mut number) = match parse_number(&mut chars) {
-            (_, None) => return Err(None),
-            (base, Some(number)) => (base, number),
-        };
-        let divisor = if let Some((_, '.')) = chars.peek() {
-            chars.next();
-            match parse_digits(base as u32, &mut chars) {
-                (_, None) => None,
-                (num_digits, Some(after_dot)) => {
+        let (base, mut number) = parse_number(&mut num);
+
+        let divisor = if !num.is_empty() && num[0] == b'.' {
+            num = &num[1..];
+            match parse_digits(&mut number, base as u8, &mut num) {
+                0 => None,
+                num_digits => {
                     let divisor = divisor_equation(base, num_digits);
-                    number *= divisor.clone();
-                    number += after_dot;
                     Some(divisor)
                 }
             }
         } else {
             None
         };
-        let exp = if let Some((i, 'e')) = chars.peek() {
-            let i = *i;
-            chars.next();
-            if let Some((i, _)) = chars.peek() {
+        let Some(number) = number else {
+            return Err(None);
+        };
+
+        let exp = if !num.is_empty() && (num[0] == b'e' || num[0] == b'p') {
+            let suffix = num;
+            num = &num[1..];
+            if !num.is_empty() {
                 self.tokenizer.buffer(Token {
                     span,
-                    src: &ident[*i..],
+                    src: unsafe { str::from_utf8_unchecked(num) },
                     kind: TokenKind::Ident,
                 });
-                chars = "".char_indices().peekable();
+                num = &[]
             }
             if let Some(exp) = self.parse_expr(u8::MAX, flags) {
                 Some(exp)
             } else {
-                return Err(Some(&ident[i..]));
+                return Err(Some(unsafe { str::from_utf8_unchecked(suffix) }));
             }
         } else {
             None
         };
+        let ty = parse_type_suffix(&mut num);
 
-        let ty = parse_type_suffix(&mut chars);
-
-        if let Some((i, _)) = chars.next() {
-            return Err(Some(&ident[i..]));
+        if !num.is_empty() {
+            return Err(Some(unsafe { str::from_utf8_unchecked(num) }));
         }
 
-        let div = match divisor {
+        let base_node = match divisor {
             Some(divisor) => {
                 let left = self
                     .tree
@@ -158,15 +142,21 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
                     .tree
                     .add(W::new(span).with_node(Node::Literal { val: divisor }));
 
-                self.tree.add(W::new(span).with_node(Node::Binary {
-                    op: BinaryOp::Div,
-                    left,
-                    right,
-                }))
+                self.tree.add(
+                    W::new(span)
+                        .with_node(Node::Binary {
+                            op: BinaryOp::Div,
+                            left,
+                            right,
+                        })
+                        .with_type(ty.into()),
+                )
             }
-            None => self
-                .tree
-                .add(W::new(span).with_node(Node::Literal { val: number })),
+            None => self.tree.add(
+                W::new(span)
+                    .with_node(Node::Literal { val: number })
+                    .with_type(ty.into()),
+            ),
         };
         Ok(match exp {
             Some(exp) => {
@@ -180,107 +170,107 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
                 }));
                 self.tree.add(W::new(span).with_node(Node::Binary {
                     op: BinaryOp::Mul,
-                    left: div,
+                    left: base_node,
                     right,
                 }))
             }
-            None => {
-                *self.tree[div].type_mut() = Some(ty.into());
-                div
-            }
+            None => base_node,
         })
     }
 }
 
 /// Defaults to Decimal
-fn parse_base_prefix(chars: &mut Peekable<CharIndices>) -> Base {
-    if let Some((_, '0')) = chars.peek() {
-        let mut base_chars = chars.clone();
-        base_chars.next();
-        let Some((_, second)) = base_chars.peek() else {
-            return Decimal;
+fn parse_base_prefix(num: &mut &[u8]) -> Base {
+    if num.len() >= 2 {
+        let base = match &num[..2] {
+            b"0b" => Binary,
+            b"0s" => Seximal,
+            b"0o" => Octal,
+            b"0d" => Dozenal,
+            b"0x" => Hexadecimal,
+            _ => return Decimal,
         };
-        if let 'b' | 's' | 'o' | 'd' | 'x' | '_' = *second {
-            chars.next();
-            return match chars.next().unwrap().1 {
-                'b' => Binary,
-                's' => Seximal,
-                'o' => Octal,
-                'd' => Dozenal,
-                'x' => Hexadecimal,
-                '_' => Decimal,
-                _ => unreachable!(),
-            };
-        }
+        *num = &num[2..];
+        base
+    } else {
+        Decimal
     }
-    Decimal
 }
 
-fn parse_digits(radix: u32, chars: &mut Peekable<CharIndices>) -> (usize, Option<BigUint>) {
+fn parse_digits(number: &mut Option<BigUint>, radix: u8, input: &mut &[u8]) -> usize {
     let mut num_digits = 0;
-    let mut number: Option<BigUint> = None;
 
-    while let Some((_, c)) = chars.peek() {
-        if let Some(digit) = c.to_digit(radix) {
-            if let Some(ref mut number) = number {
-                chars.next();
+    while !input.is_empty() {
+        if let Some(digit) = to_digit(input[0], radix) {
+            if let Some(number) = number {
                 *number *= BigUint::from(radix);
-                *number |= BigUint::from(digit);
-                num_digits += 1;
+                *number += BigUint::from(digit);
             } else {
-                chars.next();
-                number = Some(BigUint::from(digit));
-                num_digits += 1;
+                *number = Some(BigUint::from(digit));
             }
+            num_digits += 1;
+            *input = &input[1..];
+        } else if input[0] == b'_' {
+            *input = &input[1..];
         } else {
-            return (num_digits, number);
+            return num_digits;
         }
     }
-    (num_digits, number)
+    num_digits
 }
 
-fn parse_number(chars: &mut Peekable<CharIndices>) -> (Base, Option<BigUint>) {
-    let base = parse_base_prefix(chars);
-    let (_, number) = parse_digits(base as u32, chars);
+fn to_digit(c: u8, radix: u8) -> Option<u8> {
+    debug_assert!(radix <= 36);
+
+    if c.is_ascii_digit() && c <= b'0' - 1 + radix {
+        return Some(c - b'0');
+    }
+
+    let c = c | 0b0010_0000; // OR the third bit into c - this has the equivalent of making it lowercase
+
+    if c.is_ascii_lowercase() && c <= b'a' - 11 + radix {
+        return Some(c - b'a' + 10);
+    }
+    None
+}
+
+fn parse_number(num: &mut &[u8]) -> (Base, Option<BigUint>) {
+    let base = parse_base_prefix(num);
+    let mut number = None;
+    parse_digits(&mut number, base as u8, num);
     (base, number)
 }
 
-fn parse_type_suffix(chars: &mut Peekable<CharIndices>) -> NumberType {
-    let Some((_, c)) = chars.peek() else {
-        return Arbitrary;
+fn parse_type_suffix(num: &mut &[u8]) -> NumberType {
+    if num.is_empty() {
+        return NumberType {
+            kind: Arbitrary,
+            size: None,
+        };
     };
-    match c {
-        'u' => {
-            chars.next();
-            let number = parse_number(chars).1;
-            Unsigned(number)
+    let kind = match num[0] {
+        b'u' => Unsigned,
+        b'i' => Signed,
+        b'f' => Float,
+        _ => {
+            return NumberType {
+                kind: Arbitrary,
+                size: None,
+            }
         }
-        'i' => {
-            chars.next();
-            let number = parse_number(chars).1;
-            Signed(number)
-        }
-        'f' => {
-            chars.next();
-            let number = parse_number(chars).1;
-            Float(number)
-        }
-        _ => Arbitrary,
+    };
+    *num = &num[1..];
+    if num.is_empty() {
+        return NumberType { kind, size: None };
+    };
+    NumberType {
+        kind,
+        size: match num[0] {
+            b'x' => {
+                *num = &num[1..];
+                Some(SYSTEM_SIZE.into())
+            }
+            _ => parse_number(num).1,
+        },
     }
-}
-
-fn last_char_utf8(s: &str) -> Option<char> {
-    let bytes = s.as_bytes();
-    let mut i = bytes.len();
-
-    while i > 0 {
-        i -= 1;
-        if (bytes[i] & 0b1100_0000) != 0b1000_0000 {
-            return std::str::from_utf8(&bytes[i..])
-                .ok()
-                .and_then(|s| s.chars().next());
-        }
-    }
-
-    None
 }

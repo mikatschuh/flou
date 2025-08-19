@@ -39,7 +39,7 @@ impl fmt::Display for Errors<'_> {
         for error in self.errors.iter() {
             string += &format!("{}\n", error.to_string(self.file));
         }
-        write!(f, "{}", string)
+        write!(f, "{string}")
     }
 }
 #[derive(Clone, Debug, PartialEq)]
@@ -221,9 +221,7 @@ macro_rules! format_error_arg {
 impl Error<'_> {
     fn to_string(&self, path: &Path) -> String {
         use ErrorCode::*;
-        format!(
-            "{}",
-            match &self.error {
+        (match &self.error {
                 UnknownOperator { op } => format_error!(
                     self.section.to_string(path),
                     "the operator {} is not known to the compiler",
@@ -324,8 +322,7 @@ impl Error<'_> {
                         [found.display_closed(), expected.display_closed()]
                     )
                 }
-            }
-        )
+            }).to_string()
     }
 }
 #[derive(Debug)]

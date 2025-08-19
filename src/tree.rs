@@ -125,7 +125,14 @@ impl<'src> NodeWrapping<'src> for NodeWrapper<'src> {
                     indentation
                 )
             }
-            Literal { val } => val.to_string(),
+            Literal { val } => format!(
+                "{}{}",
+                val,
+                self.typed.as_ref().map_or("".to_owned(), |ty| format!(
+                    " - {}",
+                    ty.display(tree, internalizer, indentation)
+                ))
+            ),
             Ident(id) => format!("Id  {}", internalizer.resolve(*id)),
             Lifetime(sym) => format!("Lifetime  {}", internalizer.resolve(*sym)),
             Field(sym) => format!("Field  {}", internalizer.resolve(*sym)),
@@ -709,7 +716,7 @@ impl<'tree> NodeId<'tree> {
     #[inline]
     fn new(idx: usize) -> Self {
         Self {
-            _marker: PhantomData::default(),
+            _marker: PhantomData,
             idx,
         }
     }
@@ -747,7 +754,7 @@ impl<'src, W: NodeWrapping<'src>> IndexMut<NodeId<'src>> for Tree<'src, W> {
 impl<'src, W: NodeWrapping<'src> + 'src> Tree<'src, W> {
     pub fn new() -> Self {
         Self {
-            _marker: PhantomData::default(),
+            _marker: PhantomData,
             nodes: vec![],
         }
     }
@@ -766,6 +773,8 @@ impl<'src, W: NodeWrapping<'src> + 'src> Tree<'src, W> {
 
 impl<'src, W: NodeWrapping<'src>> Tree<'src, W> {
     pub fn to_string(&'src self, root: NodeId<'src>, internalizer: &Internalizer<'src>) -> String {
-        format!("{}", self[root].display(self, internalizer, String::new()))
+        self[root]
+            .display(self, internalizer, String::new())
+            .to_string()
     }
 }

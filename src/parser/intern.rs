@@ -24,7 +24,7 @@ impl<'src> Internalizer<'src> {
             return sym;
         }
         let id = Symbol {
-            _marker: PhantomData::default(),
+            _marker: PhantomData,
             idx: self.vec.len(),
         };
         self.vec.push(name);

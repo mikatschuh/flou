@@ -305,7 +305,7 @@ pub struct Ref<'recv, T> {
 impl<'recv, T> Clone for Ref<'recv, T> {
     fn clone(&self) -> Self {
         Self {
-            _marker: PhantomData::default(),
+            _marker: PhantomData,
             ptr: self.ptr,
         }
     }
@@ -321,7 +321,7 @@ impl<'recv, T> Ref<'recv, T> {
     #[inline]
     pub fn new(val: &'recv mut T) -> Self {
         Self {
-            _marker: PhantomData::default(),
+            _marker: PhantomData,
             ptr: unsafe { NonNull::new_unchecked(val as *mut T) },
         }
     }
