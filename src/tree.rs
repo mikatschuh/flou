@@ -394,7 +394,7 @@ impl<'src> Path<NodeId<'src>> {
         tree: &'src Tree<'src, W>,
     ) -> Path<Box<HeapNode<'src>>> {
         Path {
-            content: Box::new(self.content.get(tree).unwrap().as_heap(tree)),
+            content: Box::new(tree[self.content].node().unwrap().as_heap(tree)),
             jump: self.jump.as_ref().map(|jump| Box::new(jump.as_heap(tree))),
         }
     }
@@ -555,7 +555,7 @@ impl<'src> Node<'src> {
             node: &NodeId<'src>,
             tree: &'src Tree<'src, W>,
         ) -> Box<HeapNode<'src>> {
-            Box::new(node.get(tree).unwrap().as_heap(tree))
+            Box::new(tree[*node].node().unwrap().as_heap(tree))
         }
         use HeapNode::*;
         match self {
@@ -719,20 +719,6 @@ impl<'tree> NodeId<'tree> {
             _marker: PhantomData,
             idx,
         }
-    }
-    #[inline]
-    pub fn get<'borrow>(
-        self,
-        tree: &'borrow Tree<'tree, impl NodeWrapping<'tree>>,
-    ) -> Option<&'borrow Node<'tree>> {
-        tree[self].node()
-    }
-    #[inline]
-    pub fn get_mut<'borrow>(
-        self,
-        tree: &'borrow mut Tree<'tree, impl NodeWrapping<'tree>>,
-    ) -> &'borrow mut Option<Node<'tree>> {
-        tree[self].node_mut()
     }
 }
 #[derive(Clone, Debug)]
