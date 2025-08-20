@@ -10,7 +10,7 @@ use Bracket::*;
 use TokenKind::*;
 
 impl<'src> Token<'src> {
-    pub fn left_bp(self) -> u8 {
+    pub fn binding_pow(self) -> u8 {
         match self.kind {
             Closed(..) | EqualPipe => 0,
 

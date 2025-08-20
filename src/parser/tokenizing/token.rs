@@ -477,7 +477,7 @@ impl TokenKind {
             Self::Cross => Some(Cross),
             CrossEqual => Some(CrossAssign),
             Up => Some(Pow),
-            UpEqual => Some(PowerAssign),
+            UpEqual => Some(PowAssign),
 
             Pipe => Some(BitOr),
             PipePipe => Some(Or),
@@ -486,7 +486,7 @@ impl TokenKind {
             PipeEqual => Some(OrAssign),
             NotPipeEqual => Some(NorAssign),
 
-            RightPipe => Some(BitOr),
+            RightPipe => Some(BitXor),
             RightPipePipe => Some(Xor),
             NotRightPipe => Some(BitXnor),
             NotRightPipePipe => Some(Xnor),

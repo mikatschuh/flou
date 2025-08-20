@@ -94,7 +94,7 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
             let bp = if tok.kind == TokenKind::Comma && flags.in_brackets {
                 0
             } else {
-                tok.left_bp()
+                tok.binding_pow()
             };
             if tok.is_terminator() || bp < min_bp {
                 return Some(lhs);

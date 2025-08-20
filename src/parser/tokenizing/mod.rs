@@ -1,5 +1,6 @@
 #[cfg(test)]
 pub mod test;
+#[allow(dead_code)]
 pub mod token;
 
 use std::{iter::FusedIterator, str::CharIndices, vec::IntoIter};
@@ -48,7 +49,7 @@ pub struct EscapeSequenceConfusion {
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum PositionState {
-    SOF,
+    SoF,
     JustAfterNewLine,
     WithinLine,
 }
@@ -57,7 +58,7 @@ impl PositionState {
     fn step(&mut self, pos: &mut Position, c: char) {
         use PositionState::*;
         match self {
-            SOF => {}
+            SoF => {}
             JustAfterNewLine => pos.next_line(),
             WithinLine => *pos += 1,
         }
@@ -92,7 +93,7 @@ impl<'src> Tokenizer<'src> {
     pub fn new(text: &'src str, errors: Rc<Errors<'src>>) -> Self {
         Tokenizer {
             span: Span::beginning(),
-            pos_state: PositionState::SOF,
+            pos_state: PositionState::SoF,
 
             state: State::Nothing,
 

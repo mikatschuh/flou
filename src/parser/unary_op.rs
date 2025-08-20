@@ -30,9 +30,3 @@ impl fmt::Display for UnaryOp {
         write!(f, "{string}")
     }
 }
-
-impl UnaryOp {
-    pub(in crate::parser) fn is_postfix(self) -> bool {
-        matches!(self, Decrement | Increment)
-    }
-}

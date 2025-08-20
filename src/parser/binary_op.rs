@@ -18,7 +18,7 @@ pub enum BinaryOp {
 
     DotAssign,   // a ·= b
     CrossAssign, // a ><= b
-    PowerAssign, // a ^= b
+    PowAssign,   // a ^= b
 
     Swap, // a =|= b
 
@@ -88,7 +88,7 @@ impl BinaryOp {
 
             DotAssign => "·=",
             CrossAssign => "><=",
-            PowerAssign => "^=",
+            PowAssign => "^=",
 
             Swap => "=|=",
 
