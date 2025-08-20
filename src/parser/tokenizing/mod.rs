@@ -114,7 +114,20 @@ impl<'src> Tokenizer<'src> {
         if self.buffer.is_empty() {
             self.restock_tokens();
         }
-        self.buffer.peek()
+        self.buffer.first()
+    }
+
+    pub fn next_if(&mut self, predicate: impl FnOnce(&Token<'src>) -> bool) -> Option<Token> {
+        if self.buffer.is_empty() {
+            self.restock_tokens();
+        }
+
+        if let Some(tok) = self.buffer.first() {
+            if predicate(tok) {
+                return self.buffer.pop_front();
+            }
+        }
+        None
     }
 
     /// Method for buffering a token. If the buffer is full (or this is called twice in a row)

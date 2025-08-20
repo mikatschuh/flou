@@ -78,7 +78,7 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
     #[inline]
     fn parse(mut self) -> (NodeId<'src>, Tree<'src, W>) {
         (
-            self.parse_path(Position::beginning(), 0, false).content,
+            self.pop_path(Position::beginning(), 0, None).content,
             self.tree,
         )
     }
@@ -91,11 +91,21 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
         let mut lhs = self.tokenizer.next()?.nud(self, min_bp, flags)?;
 
         while let Some(tok) = self.tokenizer.peek() {
-            let bp = if tok.kind == TokenKind::Comma && flags.in_brackets {
+            let bp = if tok.kind == TokenKind::Comma
+                && matches!(flags.in_brackets, Some(Bracket::Squared | Bracket::Round))
+            {
                 0
             } else {
                 tok.binding_pow()
             };
+            if flags.in_brackets.is_none() {
+                if let TokenKind::Closed(closed) = tok.kind {
+                    let Token { span, .. } = self.tokenizer.next().unwrap();
+                    self.errors
+                        .push(span, ErrorCode::NoOpenedBracket { closed });
+                    return Some(lhs);
+                }
+            }
             if tok.is_terminator() || bp < min_bp {
                 return Some(lhs);
             } else {
@@ -106,8 +116,32 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
         Some(lhs)
     }
 
-    #[inline]
-    fn parse_path(&mut self, pos: Position, min_bp: u8, in_brackets: bool) -> Path<NodeId<'src>> {
+    fn pop_path(
+        &mut self,
+        pos: Position,
+        min_bp: u8,
+        in_brackets: Option<Bracket>,
+    ) -> Path<NodeId<'src>> {
+        let mut jump = None;
+        Path {
+            content: self.pop_expr(
+                pos,
+                min_bp,
+                Flags {
+                    in_brackets,
+                    loc: Location::Path(Ref::new(&mut jump)),
+                },
+            ),
+            jump,
+        }
+    }
+
+    fn parse_path(
+        &mut self,
+        pos: Position,
+        min_bp: u8,
+        in_brackets: Option<Bracket>,
+    ) -> Path<NodeId<'src>> {
         let mut jump = None;
         Path {
             content: self
@@ -159,6 +193,13 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
         }
     }
 
+    fn clean_up_after_jump(&mut self) {
+        if let Some(Token { span, .. }) = self.tokenizer.next_if(|tok| !tok.is_terminator()) {
+            self.errors.push(span, ErrorCode::CodeAfterJump);
+        }
+        self.tokenizer.consume_while(|tok| !tok.is_terminator());
+    }
+
     /// Pops an identifier if the next token is one. If not it generates the correct error message
     /// and leaves the token there. The position indicates were the identifier is expected to go.
     fn pop_identifier(&mut self, pos: Position) -> Option<(Span, Symbol<'src>)> {
@@ -198,7 +239,7 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Flags<'src, 'caller> {
-    pub in_brackets: bool,
+    pub in_brackets: Option<Bracket>,
     pub loc: Location<'src, 'caller>,
 }
 
@@ -212,20 +253,16 @@ impl<'src, 'caller> Flags<'src, 'caller> {
     #[inline]
     const fn new(jump: Ref<'caller, Option<Box<Jump<NodeId<'src>>>>>) -> Self {
         Self {
-            in_brackets: false,
+            in_brackets: None,
             loc: Location::Path(jump),
         }
     }
-    fn in_brackets(mut self) -> Self {
-        self.in_brackets = true;
+    fn in_brackets(mut self, bracket: Bracket) -> Self {
+        self.in_brackets = Some(bracket);
         self
     }
     fn outside_of_brackets(mut self) -> Self {
-        self.in_brackets = false;
-        self
-    }
-    fn in_brackets_if(mut self, condition: bool) -> Self {
-        self.in_brackets = condition;
+        self.in_brackets = None;
         self
     }
     fn location(mut self, loc: Location<'src, 'caller>) -> Self {

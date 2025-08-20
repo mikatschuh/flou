@@ -59,14 +59,15 @@ impl<'src> Token<'src> {
                     If | Loop => {
                         let condition =
                             state.pop_expr(self.span.end + 1, 4, flags.outside_of_brackets());
-                        let then_body = state.parse_path(self.span.end + 1, 4, flags.in_brackets);
-                        let else_body = if state
-                            .tokenizer
-                            .peek()
-                            .is_some_and(|x| x.kind == Keyword(Else))
+                        let then_body = state.pop_path(
+                            state.tree[condition].span().end + 1,
+                            4,
+                            flags.in_brackets,
+                        );
+                        let else_body = if let Some(Token { span, .. }) =
+                            state.tokenizer.next_if(|x| x.kind == Keyword(Else))
                         {
-                            let Token { span, .. } = state.tokenizer.next().unwrap();
-                            Some(state.parse_path(span.end + 1, 4, flags.in_brackets))
+                            Some(state.pop_path(span.end + 1, 4, flags.in_brackets))
                         } else {
                             None
                         };
@@ -91,6 +92,7 @@ impl<'src> Token<'src> {
                                 .count();
 
                             jump.write(Some(Box::new(Jump::Continue { layers })));
+                            state.clean_up_after_jump();
                             return None;
                         }
                         FuncArgType => {
@@ -111,6 +113,7 @@ impl<'src> Token<'src> {
                                 layers,
                                 val: state.parse_path(self.span.end + 1, 4, flags.in_brackets),
                             })));
+                            state.clean_up_after_jump();
                             return None;
                         }
                         FuncArgType => {
@@ -127,6 +130,7 @@ impl<'src> Token<'src> {
                             jump.write(Some(Box::new(Jump::Return {
                                 val: state.parse_path(self.span.end + 1, 4, flags.in_brackets),
                             })));
+                            state.clean_up_after_jump();
                             return None;
                         }
                         FuncArgType => {
@@ -148,9 +152,7 @@ impl<'src> Token<'src> {
                     .add(W::new(self.span.start - ident_span).with_node(Node::Lifetime(symbol)))
             }
             Open(own_bracket) => {
-                if let Some(content) =
-                    state.parse_expr(0, flags.in_brackets_if(own_bracket != Bracket::Curly))
-                {
+                if let Some(content) = state.parse_expr(0, flags.in_brackets(own_bracket)) {
                     let end =
                         state.handle_closed_bracket(self.span.end + 1, self.span, own_bracket);
                     state.tree[content].span_mut().end = end.end;
@@ -163,7 +165,16 @@ impl<'src> Token<'src> {
                         .add(W::new(self.span.start - end).with_node(Node::Unit))
                 }
             }
-            Closed(..) => return None,
+            Closed(..) if flags.in_brackets.is_some() => {
+                state.tokenizer.buffer(self);
+                return None;
+            }
+            Closed(bracket) => {
+                state
+                    .errors
+                    .push(self.span, ErrorCode::NoOpenedBracket { closed: bracket });
+                return None;
+            }
             kind => match kind.as_prefix() {
                 Some(op) => {
                     let operand = state.pop_expr(self.span.end + 1, op.bp(), flags);
@@ -182,7 +193,7 @@ impl<'src> Token<'src> {
     pub(super) fn led<'caller, W: NodeWrapping<'src> + 'src>(
         self,
         lhs: NodeId<'src>,
-        state: &mut Parser<'src, W>,
+        state: &'caller mut Parser<'src, W>,
         flags: Flags<'src, 'caller>,
     ) -> NodeId<'src> {
         match self.kind {
@@ -196,11 +207,13 @@ impl<'src> Token<'src> {
                     Bracket::Squared => BinaryOp::Index,
                     _ => unreachable!(),
                 };
-                let rhs = state.parse_expr(0, flags.in_brackets()).unwrap_or_else(|| {
-                    state
-                        .tree
-                        .add(W::new(self.span - (self.span + 1)).with_node(Node::Unit))
-                });
+                let rhs = state
+                    .parse_expr(0, flags.in_brackets(bracket))
+                    .unwrap_or_else(|| {
+                        state
+                            .tree
+                            .add(W::new(self.span - (self.span + 1)).with_node(Node::Unit))
+                    });
                 let end = state.handle_closed_bracket(self.span.end + 1, self.span, bracket);
                 state.tree[rhs].span_mut().end = end.end;
                 state.tree.add(
@@ -212,7 +225,7 @@ impl<'src> Token<'src> {
                 )
             }
             Comma => {
-                let bp = if flags.in_brackets {
+                let bp = if matches!(flags.in_brackets, Some(Bracket::Squared | Bracket::Round)) {
                     1
                 } else {
                     self.right_bp()

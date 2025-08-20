@@ -260,9 +260,17 @@ impl<T, const CAP: usize, const CAP_LOG_2: usize> ArrayQueue<T, CAP, CAP_LOG_2> 
         }
     }
 
-    pub fn peek(&self) -> Option<&T> {
+    pub fn first(&self) -> Option<&T> {
         if self.len > 0 {
             Some(unsafe { self.buffer[self.start].assume_init_ref() })
+        } else {
+            None
+        }
+    }
+
+    pub fn last(&self) -> Option<&T> {
+        if self.len > 0 {
+            Some(&self[self.start + self.len - 1])
         } else {
             None
         }
@@ -337,7 +345,7 @@ impl<'recv, T> Ref<'recv, T> {
 fn test() {
     let mut queue: ArrayQueue<i32, 16, 4> = ArrayQueue::new();
     assert_eq!(queue, []);
-    assert_eq!(queue.peek(), None);
+    assert_eq!(queue.first(), None);
 
     queue.push_back(1);
     assert_eq!(queue, [1]);
@@ -345,7 +353,7 @@ fn test() {
     queue.push_back(2);
     queue.push_back(3);
     assert_eq!(queue, [1, 2, 3]);
-    assert_eq!(queue.peek(), Some(&1));
+    assert_eq!(queue.first(), Some(&1));
 
     assert_eq!(queue.pop_front(), Some(1));
     assert_eq!(queue.pop_front(), Some(2));
@@ -355,14 +363,14 @@ fn test() {
 
     let mut queue: ArrayQueue<i32, 2, 1> = ArrayQueue::new();
     assert_eq!(queue, []);
-    assert_eq!(queue.peek(), None);
+    assert_eq!(queue.first(), None);
 
     queue.push_back(1);
     assert_eq!(queue, [1]);
 
     queue.push_back(2);
     assert_eq!(queue, [1, 2]);
-    assert_eq!(queue.peek(), Some(&1));
+    assert_eq!(queue.first(), Some(&1));
 
     assert_eq!(queue.pop_front(), Some(1));
 

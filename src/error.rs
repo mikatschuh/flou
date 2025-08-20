@@ -66,9 +66,6 @@ pub enum ErrorCode<'src> {
     NoClosingQuotes {
         quote: &'src str,
     },
-    NumberContainedOnlyPrefix {
-        number: &'src str,
-    },
     InvalidCombination {
         left: Option<Token<'src>>,
         right: Option<Token<'src>>,
@@ -80,6 +77,7 @@ pub enum ErrorCode<'src> {
     JumpInsideFuncArg {
         keyword: &'src str,
     },
+    CodeAfterJump,
 
     // bracket errors
     NoOpenedBracket {
@@ -222,107 +220,107 @@ impl Error<'_> {
     fn to_string(&self, path: &Path) -> String {
         use ErrorCode::*;
         (match &self.error {
-                UnknownOperator { op } => format_error!(
-                    self.section.to_string(path),
-                    "the operator {} is not known to the compiler",
-                    [*op]
-                ),
-                ExpectedValue => format_error!(self.section.to_string(path), "expected a value"),
-                ExpectedValueFoundEOF => format_error!(
-                    self.section.to_string(path),
-                    "expected a value but the file ended"
-                ),
-                DidntExpectValue { found } => format_error!(
-                    self.section.to_string(path),
-                    "didn't expect a value found {}",
-                    [found]
-                ),
-                ExpectedIdent { found } => format_error!(
-                    self.section.to_string(path),
-                    "expected an identifier, found {}",
-                    [found]
-                ),
-                ExpectedIdentFoundEOF => format_error!(
-                    self.section.to_string(path),
-                    "expected an identifier but the file ended"
-                ),
-                NoClosingQuotes { quote } => format_error!(
-                    self.section.to_string(path),
-                    "the ending quotes of the quote {} were missing",
-                    [format!("{}{}{}", "\"", quote, "\"".red().underline())]
-                ),
-                NumberContainedOnlyPrefix { number } => {
-                    format_error!(
-                        self.section.to_string(path),
-                        "there was a base prefix and nothing behind, {}",
-                        [*number],
-                        "if you wanted to make an identifier, dont let it start with a number"
-                    )
-                }
-                InvalidCombination { left, right } => {
-                    if let Some(left) = left {
-                        if let Some(right) = right {
-                            format_error!(
-                                self.section.to_string(path),
-                                "you can't combine {} with an {}",
-                                [left, right]
-                            )
-                        } else {
-                            format_error!(
-                                self.section.to_string(path),
-                                "{} was followed by a great nothingness",
-                                [left]
-                            )
-                        }
-                    } else if let Some(right) = right {
+            UnknownOperator { op } => format_error!(
+                self.section.to_string(path),
+                "the operator {} is not known to the compiler",
+                [*op]
+            ),
+            ExpectedValue => format_error!(self.section.to_string(path), "expected a value"),
+            ExpectedValueFoundEOF => format_error!(
+                self.section.to_string(path),
+                "expected a value but the file ended"
+            ),
+            DidntExpectValue { found } => format_error!(
+                self.section.to_string(path),
+                "didn't expect a value found {}",
+                [found]
+            ),
+            ExpectedIdent { found } => format_error!(
+                self.section.to_string(path),
+                "expected an identifier, found {}",
+                [found]
+            ),
+            ExpectedIdentFoundEOF => format_error!(
+                self.section.to_string(path),
+                "expected an identifier but the file ended"
+            ),
+            NoClosingQuotes { quote } => format_error!(
+                self.section.to_string(path),
+                "the ending quotes of the quote {} were missing",
+                [format!("{}{}{}", "\"", quote, "\"".red().underline())]
+            ),
+            InvalidCombination { left, right } => {
+                if let Some(left) = left {
+                    if let Some(right) = right {
                         format_error!(
                             self.section.to_string(path),
-                            "{} followed a great nothingness",
-                            [right],
-                            "place a value infront"
+                            "you can't combine {} with an {}",
+                            [left, right]
                         )
                     } else {
-                        unreachable!()
+                        format_error!(
+                            self.section.to_string(path),
+                            "{} was followed by a great nothingness",
+                            [left]
+                        )
                     }
-                }
-                LonelyElse => {
+                } else if let Some(right) = right {
                     format_error!(
                         self.section.to_string(path),
-                        "the else - keyword has been used without an if / loop - block infront of it",
-                        "you've to add the if / loop block"
+                        "{} followed a great nothingness",
+                        [right],
+                        "place a value infront"
                     )
+                } else {
+                    unreachable!()
                 }
-                SecondElse => {
-                    format_error!(self.section.to_string(path), "there was a second else")
-                }
-                JumpInsideFuncArg { keyword } => format_error!(
+            }
+            LonelyElse => {
+                format_error!(
                     self.section.to_string(path),
-                    "there was a {} - jump inside of a function arguments type",
-                    [keyword],
-                    "you have to remove the jump, because there is no location to jump to"
-                ),
-                NoOpenedBracket { closed } => {
-                    format_error!(
-                        self.section.to_string(path),
-                        "there was a closed bracket {} but no opened one",
-                        [closed.display_closed()]
-                    )
-                }
-                NoClosedBracket { opened } => {
-                    format_error!(
-                        self.section.to_string(path),
-                        "there was a opened bracket {} but no closed one",
-                        [opened.display_open()]
-                    )
-                }
-                WrongClosedBracket { expected, found } => {
-                    format_error!(
-                        self.section.to_string(path),
-                        "found the closed bracket {} but actually expected {}",
-                        [found.display_closed(), expected.display_closed()]
-                    )
-                }
-            }).to_string()
+                    "the else - keyword has been used without an if / loop - block infront of it",
+                    "you've to add the if / loop block"
+                )
+            }
+            SecondElse => {
+                format_error!(self.section.to_string(path), "there was a second else")
+            }
+            JumpInsideFuncArg { keyword } => format_error!(
+                self.section.to_string(path),
+                "there was a {} - jump inside of a function arguments type",
+                [keyword],
+                "you have to remove the jump, because there is no location to jump to"
+            ),
+            CodeAfterJump => {
+                format_error!(
+                    self.section.to_string(path),
+                    "there was code after a jump",
+                    "a jump cannot be followed by code"
+                )
+            }
+            NoOpenedBracket { closed } => {
+                format_error!(
+                    self.section.to_string(path),
+                    "there was a closed bracket {} but no opened one",
+                    [closed.display_closed()]
+                )
+            }
+            NoClosedBracket { opened } => {
+                format_error!(
+                    self.section.to_string(path),
+                    "there was a opened bracket {} but no closed one",
+                    [opened.display_open()]
+                )
+            }
+            WrongClosedBracket { expected, found } => {
+                format_error!(
+                    self.section.to_string(path),
+                    "found the closed bracket {} but actually expected {}",
+                    [found.display_closed(), expected.display_closed()]
+                )
+            }
+        })
+        .to_string()
     }
 }
 #[derive(Debug)]
