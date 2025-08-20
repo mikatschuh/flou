@@ -6,7 +6,7 @@ use crate::{
 use colored::{ColoredString, Colorize};
 use std::fmt::Display;
 
-#[derive(PartialEq, Debug, Clone, Eq)]
+#[derive(PartialEq, Debug, Clone, Copy, Eq)]
 pub struct Token<'src> {
     pub span: Span,
     pub src: &'src str,

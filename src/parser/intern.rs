@@ -32,10 +32,6 @@ impl<'src> Internalizer<'src> {
         id
     }
 
-    pub fn contains(&self, name: &&str) -> bool {
-        self.map.contains_key(name)
-    }
-
     pub fn resolve(&self, sym: Symbol) -> &str {
         self.vec[sym.idx]
     }

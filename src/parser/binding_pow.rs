@@ -1,46 +1,97 @@
-use crate::parser::{binary_op::BinaryOp, unary_op::UnaryOp};
+use crate::{
+    parser::{
+        tokenizing::token::{Token, TokenKind},
+        unary_op::UnaryOp,
+    },
+    tree::Bracket,
+};
 
-impl BinaryOp {
-    pub fn binding_pow(self) -> (u8, u8) {
-        use BinaryOp::*;
-        match self {
-            // Inside of Brackets Comma => (0, 1)
-            // Statements => (2, 3)
-            // Colon Statements => (4, 5)
-            // Binding => (6, 7)
-            Write | OrAssign | NorAssign | XorAssign | XnorAssign | AndAssign | NandAssign
-            | AddAssign | SubAssign | MulAssign | DivAssign | ModAssign | DotAssign
-            | CrossAssign | PowerAssign | Swap => (10, 11),
+use Bracket::*;
+use TokenKind::*;
 
-            // Comma => (8, 7)
-            Or | Nor => (20, 21),
-            Xor | Xnor => (30, 31),
-            And | Nand => (40, 41),
+impl<'src> Token<'src> {
+    pub fn left_bp(self) -> u8 {
+        match self.kind {
+            Closed(..) | EqualPipe => 0,
 
-            Equal | NonEqual | Smaller | SmallerOrEqual | Greater | GreaterOrEqual => (50, 51),
+            Not | NotNot | Tick | RightArrow | Ident | Quote | Keyword(..) | Open(Curly) => 2,
 
-            BitShiftLeft | BitShiftRight => (60, 61),
+            Colon => 4,
 
-            BitOr | BitNor => (70, 71),
-            BitXor | BitXnor => (80, 81),
-            BitAnd | BitNand => (90, 91),
+            Equal => 6,
 
-            Add | Sub => (100, 101),
+            ColonEqual | PipeEqual | NotPipeEqual | RightPipeEqual | NotRightPipeEqual
+            | AndEqual | NotAndEqual | PlusEqual | DashEqual | StarEqual | SlashEqual
+            | PercentEqual | DotEqual | CrossEqual | UpEqual | SwapSign | PlusPlus | DashDash => 10,
 
-            Mul | Div | Mod | Dot | Cross => (110, 111),
-            // Neg => 15
-            Pow => (121, 120),
+            Comma => 15,
 
-            Index | App => (130, 131),
+            PipePipe | NotPipePipe => 20,
+            RightPipePipe | NotRightPipePipe => 30,
+            AndAnd | NotAndAnd => 40,
+
+            EqualEqual | NotEqual | Left | NotLeft | LeftEqual | NotLeftEqual | Right
+            | NotRight | RightEqual | NotRightEqual => 50,
+
+            LeftLeft | RightRight => 60,
+
+            Pipe | NotPipe => 70,
+            RightPipe | NotRightPipe => 80,
+            And | NotAnd => 90,
+
+            Plus | Dash => 100,
+
+            Star | Slash | Percent | Dot | Cross => 110,
+
+            Up => 121,
+
+            LeftArrow => 124,
+
+            Open(Squared | Round) => 130,
+        }
+    }
+    pub fn right_bp(self) -> u8 {
+        match self.kind {
+            Closed(..) | Open(Squared | Round) | EqualPipe | LeftArrow => 0,
+
+            Not | NotNot | Tick | RightArrow | Ident | Quote | Keyword(..) | Open(Curly) => 3,
+
+            Colon => 5,
+
+            Equal => 7,
+
+            ColonEqual | PipeEqual | NotPipeEqual | RightPipeEqual | NotRightPipeEqual
+            | AndEqual | NotAndEqual | PlusEqual | DashEqual | StarEqual | SlashEqual
+            | PercentEqual | DotEqual | CrossEqual | UpEqual | SwapSign | PlusPlus | DashDash => 11,
+
+            Comma => 16,
+
+            PipePipe | NotPipePipe => 21,
+            RightPipePipe | NotRightPipePipe => 31,
+            AndAnd | NotAndAnd => 41,
+
+            EqualEqual | NotEqual | Left | NotLeft | LeftEqual | NotLeftEqual | Right
+            | NotRight | RightEqual | NotRightEqual => 51,
+
+            LeftLeft | RightRight => 61,
+
+            Pipe | NotPipe => 71,
+            RightPipe | NotRightPipe => 81,
+            And | NotAnd => 91,
+
+            Plus | Dash => 101,
+
+            Star | Slash | Percent | Dot | Cross => 111,
+
+            Up => 120,
         }
     }
 }
 impl UnaryOp {
-    pub fn binding_pow(self) -> u8 {
+    pub fn bp(self) -> u8 {
         use UnaryOp::*;
         match self {
             Neg | Pos => 115,
-
             Ref | Not => 125,
 
             Increment | Decrement => 10,
