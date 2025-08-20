@@ -9,6 +9,9 @@ use crate::{
 use Bracket::*;
 use TokenKind::*;
 
+pub(super) const SINGLE_VALUE: u8 = 124;
+pub(super) const EXPONENT: u8 = 121;
+
 impl<'src> Token<'src> {
     pub fn binding_pow(self) -> u8 {
         match self.kind {

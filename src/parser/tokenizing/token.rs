@@ -445,6 +445,7 @@ impl TokenKind {
             Self::Not => Some(Not),
             RightArrow => Some(Ref),
             Plus => Some(Pos),
+            PlusPlus => Some(Pos),
             _ => None,
         }
     }

@@ -15,6 +15,7 @@ use crate::{
 use std::{
     fmt::Debug,
     marker::PhantomData,
+    mem::swap,
     ops::{Index, IndexMut},
     vec,
 };
@@ -744,12 +745,16 @@ impl<'src, W: NodeWrapping<'src> + 'src> Tree<'src, W> {
             nodes: vec![],
         }
     }
+
     pub fn add(&mut self, node: W) -> NodeId<'src> {
         self.nodes.push(node);
         NodeId::new(self.nodes.len() - 1)
     }
-    pub fn move_to_new_location(&mut self, node: NodeId<'src>) -> NodeId<'src> {
-        self.add(self[node].clone())
+
+    pub fn move_to(&mut self, src: NodeId<'src>, dst: NodeId<'src>) {
+        let mut src_w = W::new(self[src].span());
+        swap(&mut self[src], &mut src_w);
+        self[dst] = src_w
     }
 
     pub fn build_graph(&'src self, root: NodeId<'src>) -> Box<HeapNode<'src>> {

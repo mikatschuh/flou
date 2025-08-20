@@ -1,6 +1,9 @@
 use crate::{
     error::{ErrorCode, Errors, Position, Span},
-    parser::intern::{Internalizer, Symbol},
+    parser::{
+        binding_pow::SINGLE_VALUE,
+        intern::{Internalizer, Symbol},
+    },
     tree::{Bracket, Jump, NodeId, NodeWrapper, NodeWrapping, Path, Tree},
     utilities::{Rc, Ref},
 };
@@ -60,6 +63,7 @@ struct Parser<'src, W: NodeWrapping<'src>> {
     errors: Rc<Errors<'src>>,
     internalizer: Rc<Internalizer<'src>>,
     tree: Tree<'src, W>,
+    dash_slot: Option<NodeId<'src>>,
 }
 impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
     #[inline]
@@ -73,6 +77,7 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
             errors,
             internalizer,
             tree: Tree::new(),
+            dash_slot: None,
         }
     }
     #[inline]
@@ -157,36 +162,48 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
         }
     }
 
-    fn handle_closed_bracket(
+    fn handle_terminator<'caller>(
         &mut self,
         pos: Position,
         own_span: Span,
-        own_bracket: Bracket,
+        open_bracket: Bracket,
+        flags: Flags<'src, 'caller>,
     ) -> Span {
         use TokenKind::*;
-        if matches!(self.tokenizer.peek(), Some(Token { kind: Closed(bracket), .. }) if *bracket == own_bracket)
-        {
-            self.tokenizer.next().unwrap().span
-        } else if let Some(Token {
-            kind: Closed(found),
+        if let Some(Token {
+            kind: Closed(closed_bracket),
             ..
         }) = self.tokenizer.peek()
         {
-            let found = *found;
+            let found = *closed_bracket;
             let span = self.tokenizer.next().unwrap().span;
-            self.errors.push(
-                own_span - span,
-                ErrorCode::WrongClosedBracket {
-                    expected: own_bracket,
-                    found,
-                },
-            );
+            if found != open_bracket {
+                self.errors.push(
+                    span,
+                    ErrorCode::WrongClosedBracket {
+                        expected: open_bracket,
+                        found,
+                    },
+                );
+            }
+            if let Some(dash_slot) = self.dash_slot {
+                let mut pos = span.end + 1;
+                if let Some(tok) = self.tokenizer.next_if(|tok| matches!(tok.kind, Dash(..))) {
+                    pos = tok.span.end + 1
+                }
+
+                if !self.tokenizer.next_is(|tok| tok.is_terminator()) {
+                    self.dash_slot = None;
+                    let node = self.pop_expr(pos, SINGLE_VALUE, flags);
+                    self.tree.move_to(node, dash_slot);
+                }
+            }
             span
         } else {
             self.errors.push(
                 own_span,
                 ErrorCode::NoClosedBracket {
-                    opened: own_bracket,
+                    opened: open_bracket,
                 },
             );
             pos.into()
@@ -231,6 +248,7 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
         flags: Flags<'src, 'caller>,
     ) -> NodeId<'src> {
         self.parse_expr(min_bp, flags).unwrap_or_else(|| {
+            dbg!(self.tokenizer.clone().collect::<Vec<_>>());
             self.errors.push(pos.into(), ErrorCode::ExpectedValue);
             self.tree.add(W::new(pos.into()))
         })

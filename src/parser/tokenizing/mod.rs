@@ -130,6 +130,17 @@ impl<'src> Tokenizer<'src> {
         None
     }
 
+    pub fn next_is(&mut self, predicate: impl FnOnce(&Token<'src>) -> bool) -> bool {
+        if self.buffer.is_empty() {
+            self.restock_tokens();
+        }
+        if let Some(tok) = self.buffer.first() {
+            predicate(tok)
+        } else {
+            false
+        }
+    }
+
     /// Method for buffering a token. If the buffer is full (or this is called twice in a row)
     /// a panic is invocated.
     pub fn buffer(&mut self, token: Token<'src>) {

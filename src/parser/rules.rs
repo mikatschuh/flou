@@ -33,15 +33,18 @@ impl<'src> Token<'src> {
     ) -> Option<NodeId<'src>> {
         Some(match self.kind {
             Ident => {
-                if self.src.starts_with('.') {
-                    if let ".." = self.src {
+                if let Some(src) = self.src.strip_prefix('.') {
+                    if let "." = src {
                         state
                             .tree
                             .add(W::new(self.span).with_node(Node::Placeholder))
+                    } else if !src.is_empty() {
+                        state.tree.add(
+                            W::new(self.span).with_node(Node::Field(state.internalizer.get(src))),
+                        )
                     } else {
-                        state.tree.add(W::new(self.span).with_node(Node::Field(
-                            state.internalizer.get(self.src.strip_prefix('.').unwrap()),
-                        )))
+                        state.errors.push(self.span, ErrorCode::IdentWithJustDot);
+                        state.tree.add(W::new(self.span))
                     }
                 } else {
                     state.convert_to_num_if_possible(self.span, self.src, flags)
@@ -159,12 +162,12 @@ impl<'src> Token<'src> {
             Open(own_bracket) => {
                 if let Some(content) = state.parse_expr(0, flags.in_brackets(own_bracket)) {
                     let end =
-                        state.handle_closed_bracket(self.span.end + 1, self.span, own_bracket);
+                        state.handle_terminator(self.span.end + 1, self.span, own_bracket, flags);
                     state.tree[content].span_mut().end = end.end;
                     content
                 } else {
                     let end =
-                        state.handle_closed_bracket(self.span.end + 1, self.span, own_bracket);
+                        state.handle_terminator(self.span.end + 1, self.span, own_bracket, flags);
                     state
                         .tree
                         .add(W::new(self.span.start - end).with_node(Node::Unit))
@@ -181,19 +184,19 @@ impl<'src> Token<'src> {
                 return None;
             }
             Dash(count) => {
-                if let Some(Token {
-                    kind: Closed(..), ..
-                }) = state.tokenizer.peek()
+                if state
+                    .tokenizer
+                    .next_is(|tok| matches!(tok.kind, Closed(..)))
                 {
-                    todo!();
-                    state.tree.add(W::new(self.span))
+                    let lhs = state.tree.add(W::new(self.span));
+                    state.dash_slot = Some(lhs);
+                    lhs
                 } else if count.get().is_odd() {
                     let op = UnaryOp::Neg;
                     let operand = state.pop_expr(self.span.end + 1, op.bp(), flags);
-                    state.tree.add(W::new(self.span).with_node(Node::Unary {
-                        op: UnaryOp::Neg,
-                        val: operand,
-                    }))
+                    state
+                        .tree
+                        .add(W::new(self.span).with_node(Node::Unary { op, val: operand }))
                 } else {
                     state.pop_expr(self.span.end + 1, UnaryOp::Pos.bp(), flags)
                 }
@@ -241,7 +244,7 @@ impl<'src> Token<'src> {
                             .tree
                             .add(W::new(self.span - (self.span + 1)).with_node(Node::Unit))
                     });
-                let end = state.handle_closed_bracket(self.span.end + 1, self.span, bracket);
+                let end = state.handle_terminator(self.span.end + 1, self.span, bracket, flags);
                 state.tree[rhs].span_mut().end = end.end;
                 state.tree.add(
                     W::new(state.tree[lhs].span() - end).with_node(Node::Binary {
@@ -340,7 +343,12 @@ impl<'src> Token<'src> {
                 )
             }
             _ => {
-                if let Some(op) = self.kind.as_infix() {
+                if let Some(op) = self.kind.as_postfix() {
+                    state.tree.add(
+                        W::new(state.tree[lhs].span() - self.span)
+                            .with_node(Node::Unary { op, val: lhs }),
+                    )
+                } else if let Some(op) = self.kind.as_infix() {
                     let rhs = state.pop_expr(self.span.end + 1, self.right_bp(), flags);
                     if op.is_chained() {
                         let mut chain = comp::Vec::new([(op, rhs)]);
@@ -373,11 +381,6 @@ impl<'src> Token<'src> {
                             ),
                         )
                     }
-                } else if let Some(op) = self.kind.as_postfix() {
-                    state.tree.add(
-                        W::new(state.tree[lhs].span() - self.span)
-                            .with_node(Node::Unary { op, val: lhs }),
-                    )
                 } else {
                     state.tokenizer.buffer(self);
 

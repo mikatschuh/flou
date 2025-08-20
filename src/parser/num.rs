@@ -1,4 +1,5 @@
 use crate::parser::{
+    binding_pow,
     tokenizing::token::{Token, TokenKind},
     Flags, Parser,
 };
@@ -84,7 +85,7 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
         flags: Flags<'src, 'caller>,
     ) -> Result<NodeId<'src>, Option<&'src str>> {
         let divisor_equation = |base, digits_after_dot| -> BigUint {
-            (base as u8).pow(digits_after_dot as u32).into()
+            (base as u32).pow(digits_after_dot as u32).into()
         };
 
         let mut num = ident.as_bytes();
@@ -118,7 +119,7 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
                 });
                 num = &[]
             }
-            if let Some(exp) = self.parse_expr(u8::MAX, flags) {
+            if let Some(exp) = self.parse_expr(binding_pow::EXPONENT, flags) {
                 Some(exp)
             } else {
                 return Err(Some(unsafe { str::from_utf8_unchecked(suffix) }));

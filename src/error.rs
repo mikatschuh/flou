@@ -50,46 +50,21 @@ pub struct Error<'src> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ErrorCode<'src> {
     ExpectedValue,
-    ExpectedValueFoundEOF,
-
-    DidntExpectValue {
-        found: &'src str,
-    },
-    ExpectedIdent {
-        found: &'src str,
-    },
+    ExpectedIdent { found: &'src str },
+    IdentWithJustDot,
     ExpectedIdentFoundEOF,
 
-    UnknownOperator {
-        op: &'src str,
-    },
-    NoClosingQuotes {
-        quote: &'src str,
-    },
-    InvalidCombination {
-        left: Option<Token<'src>>,
-        right: Option<Token<'src>>,
-    },
+    NoClosingQuotes { quote: &'src str },
     // control structure mistakes
     LonelyElse,
-    SecondElse,
 
-    JumpInsideFuncArg {
-        keyword: &'src str,
-    },
+    JumpInsideFuncArg { keyword: &'src str },
     CodeAfterJump,
 
     // bracket errors
-    NoOpenedBracket {
-        closed: Bracket,
-    },
-    NoClosedBracket {
-        opened: Bracket,
-    },
-    WrongClosedBracket {
-        expected: Bracket,
-        found: Bracket,
-    },
+    NoOpenedBracket { closed: Bracket },
+    NoClosedBracket { opened: Bracket },
+    WrongClosedBracket { expected: Bracket, found: Bracket },
 }
 impl<'a> Error<'a> {
     pub fn new(pos: Span, error: ErrorCode<'a>) -> Self {
@@ -101,7 +76,7 @@ impl<'a> Error<'a> {
 }
 
 static ERROR: std::sync::LazyLock<String> =
-    std::sync::LazyLock::new(|| format!("{}{}", "error".bold().red(), &":".bold()));
+    std::sync::LazyLock::new(|| format!("{}{}", "ERROR".bold().red(), &":".bold()));
 macro_rules! format_error {
     // version without tip
     ($pos:expr, $msg:expr, [$($arg:expr),*]) => {
@@ -220,25 +195,16 @@ impl Error<'_> {
     fn to_string(&self, path: &Path) -> String {
         use ErrorCode::*;
         (match &self.error {
-            UnknownOperator { op } => format_error!(
-                self.section.to_string(path),
-                "the operator {} is not known to the compiler",
-                [*op]
-            ),
             ExpectedValue => format_error!(self.section.to_string(path), "expected a value"),
-            ExpectedValueFoundEOF => format_error!(
-                self.section.to_string(path),
-                "expected a value but the file ended"
-            ),
-            DidntExpectValue { found } => format_error!(
-                self.section.to_string(path),
-                "didn't expect a value found {}",
-                [found]
-            ),
             ExpectedIdent { found } => format_error!(
                 self.section.to_string(path),
                 "expected an identifier, found {}",
                 [found]
+            ),
+            IdentWithJustDot => format_error!(
+                self.section.to_string(path),
+                "an identifier was just made of a single dot",
+                "identifiers have to contain more than just a leading dot"
             ),
             ExpectedIdentFoundEOF => format_error!(
                 self.section.to_string(path),
@@ -249,41 +215,12 @@ impl Error<'_> {
                 "the ending quotes of the quote {} were missing",
                 [format!("{}{}{}", "\"", quote, "\"".red().underline())]
             ),
-            InvalidCombination { left, right } => {
-                if let Some(left) = left {
-                    if let Some(right) = right {
-                        format_error!(
-                            self.section.to_string(path),
-                            "you can't combine {} with an {}",
-                            [left, right]
-                        )
-                    } else {
-                        format_error!(
-                            self.section.to_string(path),
-                            "{} was followed by a great nothingness",
-                            [left]
-                        )
-                    }
-                } else if let Some(right) = right {
-                    format_error!(
-                        self.section.to_string(path),
-                        "{} followed a great nothingness",
-                        [right],
-                        "place a value infront"
-                    )
-                } else {
-                    unreachable!()
-                }
-            }
             LonelyElse => {
                 format_error!(
                     self.section.to_string(path),
                     "the else - keyword has been used without an if / loop - block infront of it",
                     "you've to add the if / loop block"
                 )
-            }
-            SecondElse => {
-                format_error!(self.section.to_string(path), "there was a second else")
             }
             JumpInsideFuncArg { keyword } => format_error!(
                 self.section.to_string(path),
