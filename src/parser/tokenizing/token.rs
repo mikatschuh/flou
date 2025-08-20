@@ -4,7 +4,8 @@ use crate::{
     tree::Bracket,
 };
 use colored::{ColoredString, Colorize};
-use std::fmt::Display;
+use num::Integer;
+use std::{fmt::Display, num::NonZeroU32};
 
 #[derive(PartialEq, Debug, Clone, Copy, Eq)]
 pub struct Token<'src> {
@@ -37,12 +38,11 @@ pub enum TokenKind {
     NotRightEqual, // !>=
     RightArrow,    // ->
 
-    Plus,      // +
-    PlusPlus,  // ++
-    PlusEqual, // +=
-    Dash,      // -
-    DashDash,  // --
-    DashEqual, // -=
+    Plus,             // +
+    PlusPlus,         // ++
+    PlusEqual,        // +=
+    Dash(NonZeroU32), // (-)+
+    DashEqual,        // -=
 
     Star,         // *
     StarEqual,    // *=
@@ -127,8 +127,8 @@ impl Display for Token<'_> {
                 Plus => "+",
                 PlusPlus => "++",
                 PlusEqual => "+=",
-                Dash => "-",
-                DashDash => "--",
+                Dash(count) =>
+                    return write!(f, "{}", (0..count.get()).map(|_| " ").collect::<String>()),
                 DashEqual => "-=",
 
                 Star => "*",
@@ -197,13 +197,16 @@ impl<'a> Token<'a> {
 }
 
 impl TokenKind {
+    pub const DASH_DASH: Self = Self::Dash(unsafe { NonZeroU32::new_unchecked(2) });
+    pub const DASH: Self = Self::Dash(unsafe { NonZeroU32::new_unchecked(1) });
+
     pub fn new(c: char) -> Option<TokenKind> {
         match c {
             '!' => Some(Not),
             '\'' => Some(Tick),
             '=' => Some(Equal),
             '+' => Some(Plus),
-            '-' => Some(Dash),
+            '-' => Some(Self::DASH),
             '*' => Some(Star),
             '/' => Some(Slash),
             '%' => Some(Percent),
@@ -272,6 +275,10 @@ impl TokenKind {
                 '=' => Some(NotLeftEqual),
                 _ => None,
             },
+            LeftArrow => match c {
+                '-' => Some(LeftArrow),
+                _ => None,
+            },
             Right => match c {
                 '=' => Some(RightEqual),
                 '>' => Some(RightRight),
@@ -297,9 +304,10 @@ impl TokenKind {
                 '=' => Some(PlusEqual),
                 _ => None,
             },
-            Dash => match c {
-                '-' => Some(DashDash),
-                '=' => Some(DashEqual),
+            Dash(count) => match c {
+                '-' => Some(Dash(count.checked_add(1)?)),
+                '=' if count.get().is_odd() => Some(DashEqual),
+                '=' => Some(PlusEqual),
                 '>' => Some(RightArrow),
                 _ => None,
             },
@@ -400,7 +408,7 @@ impl TokenKind {
             ),
             '>' => matches!(self, RightArrow | Right | RightRight | NotRight),
             '+' => matches!(self, Plus | PlusPlus),
-            '-' => matches!(self, Dash | DashDash | LeftArrow),
+            '-' => matches!(self, Dash(..) | LeftArrow),
             '*' => self == Star,
             '/' => self == Slash,
             '%' => self == Percent,
@@ -436,7 +444,6 @@ impl TokenKind {
         match self {
             Self::Not => Some(Not),
             RightArrow => Some(Ref),
-            Dash => Some(Neg),
             Plus => Some(Pos),
             _ => None,
         }
@@ -462,7 +469,6 @@ impl TokenKind {
 
             Plus => Some(Add),
             PlusEqual => Some(AddAssign),
-            Dash => Some(Sub),
             DashEqual => Some(SubAssign),
 
             Star => Some(Mul),
@@ -512,7 +518,6 @@ impl TokenKind {
         match self {
             LeftArrow => Some(Ref),
             PlusPlus => Some(Increment),
-            DashDash => Some(Decrement),
             _ => None,
         }
     }

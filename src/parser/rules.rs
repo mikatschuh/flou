@@ -1,3 +1,7 @@
+use std::num::NonZeroU32;
+
+use num::Integer;
+
 use crate::{
     comp,
     error::ErrorCode,
@@ -8,6 +12,7 @@ use crate::{
             resolve_escape_sequences,
             token::{Token, TokenKind::*},
         },
+        unary_op::UnaryOp,
         Flags,
         Location::*,
         Parser,
@@ -175,12 +180,34 @@ impl<'src> Token<'src> {
                     .push(self.span, ErrorCode::NoOpenedBracket { closed: bracket });
                 return None;
             }
+            Dash(count) => {
+                if let Some(Token {
+                    kind: Closed(..), ..
+                }) = state.tokenizer.peek()
+                {
+                    todo!();
+                    state.tree.add(W::new(self.span))
+                } else if count.get().is_odd() {
+                    let op = UnaryOp::Neg;
+                    let operand = state.pop_expr(self.span.end + 1, op.bp(), flags);
+                    state.tree.add(W::new(self.span).with_node(Node::Unary {
+                        op: UnaryOp::Neg,
+                        val: operand,
+                    }))
+                } else {
+                    state.pop_expr(self.span.end + 1, UnaryOp::Pos.bp(), flags)
+                }
+            }
             kind => match kind.as_prefix() {
                 Some(op) => {
                     let operand = state.pop_expr(self.span.end + 1, op.bp(), flags);
-                    state
-                        .tree
-                        .add(W::new(self.span).with_node(Node::Unary { op, val: operand }))
+                    if op == UnaryOp::Pos {
+                        operand
+                    } else {
+                        state
+                            .tree
+                            .add(W::new(self.span).with_node(Node::Unary { op, val: operand }))
+                    }
                 }
                 _ => {
                     state.tokenizer.buffer(self);
@@ -191,7 +218,7 @@ impl<'src> Token<'src> {
     }
 
     pub(super) fn led<'caller, W: NodeWrapping<'src> + 'src>(
-        self,
+        mut self,
         lhs: NodeId<'src>,
         state: &'caller mut Parser<'src, W>,
         flags: Flags<'src, 'caller>,
@@ -282,6 +309,30 @@ impl<'src> Token<'src> {
                 state.tree.add(
                     W::new(state.tree[lhs].span() - state.tree[rhs].span()).with_node(
                         Node::Binding {
+                            left: lhs,
+                            right: rhs,
+                        },
+                    ),
+                )
+            }
+            Dash(count) if count.get() > 1 => {
+                if let Some(new_count) = NonZeroU32::new(count.get() - 2) {
+                    self.kind = Dash(new_count);
+                    state.tokenizer.buffer(self);
+                }
+                state.tree.add(
+                    W::new(state.tree[lhs].span() - self.span).with_node(Node::Unary {
+                        op: UnaryOp::Decrement,
+                        val: lhs,
+                    }),
+                )
+            }
+            Dash(..) => {
+                let rhs = state.pop_expr(self.span.end + 1, self.right_bp(), flags);
+                state.tree.add(
+                    W::new(state.tree[lhs].span() - state.tree[rhs].span()).with_node(
+                        Node::Binary {
+                            op: BinaryOp::Sub,
                             left: lhs,
                             right: rhs,
                         },
