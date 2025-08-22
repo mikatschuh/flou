@@ -50,9 +50,8 @@ pub struct Error<'src> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ErrorCode<'src> {
     ExpectedValue,
-    ExpectedIdent { found: &'src str },
+    ExpectedIdent,
     IdentWithJustDot,
-    ExpectedIdentFoundEOF,
 
     NoClosingQuotes { quote: &'src str },
     // control structure mistakes
@@ -196,19 +195,15 @@ impl Error<'_> {
         use ErrorCode::*;
         (match &self.error {
             ExpectedValue => format_error!(self.section.to_string(path), "expected a value"),
-            ExpectedIdent { found } => format_error!(
+            ExpectedIdent {} => format_error!(
                 self.section.to_string(path),
-                "expected an identifier, found {}",
-                [found]
+                "expected an identifier",
+                "you have to always put a value behind a tick"
             ),
             IdentWithJustDot => format_error!(
                 self.section.to_string(path),
                 "an identifier was just made of a single dot",
                 "identifiers have to contain more than just a leading dot"
-            ),
-            ExpectedIdentFoundEOF => format_error!(
-                self.section.to_string(path),
-                "expected an identifier but the file ended"
             ),
             NoClosingQuotes { quote } => format_error!(
                 self.section.to_string(path),

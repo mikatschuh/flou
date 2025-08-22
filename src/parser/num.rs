@@ -16,17 +16,8 @@ use crate::{
 };
 use num::BigUint;
 
-#[cfg(target_pointer_width = "64")]
-const SYSTEM_SIZE: usize = 64;
-
-#[cfg(target_pointer_width = "32")]
-const SYSTEM_SIZE: usize = 32;
-
-#[cfg(target_pointer_width = "16")]
-const SYSTEM_SIZE: usize = 16;
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Base {
+pub enum Base {
     Binary = 2,
     Seximal = 6,
     Octal = 8,
@@ -119,7 +110,7 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
                 });
                 num = &[]
             }
-            if let Some(exp) = self.parse_expr(binding_pow::EXPONENT, flags) {
+            if let Some(exp) = self.parse_expr(BinaryOp::Pow.binding_pow(), flags) {
                 Some(exp)
             } else {
                 return Err(Some(unsafe { str::from_utf8_unchecked(suffix) }));
@@ -127,11 +118,9 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
         } else {
             None
         };
-        let ty = parse_type_suffix(&mut num);
-
-        if !num.is_empty() {
+        let Some(num_type) = self.type_parser.parse_number_type(num) else {
             return Err(Some(unsafe { str::from_utf8_unchecked(num) }));
-        }
+        };
 
         let base_node = match divisor {
             Some(divisor) => {
@@ -147,16 +136,16 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
                     W::new(span)
                         .with_node(Node::Binary {
                             op: BinaryOp::Div,
-                            left,
-                            right,
+                            lhs: left,
+                            rhs: right,
                         })
-                        .with_type(ty.into()),
+                        .with_type(num_type.into()),
                 )
             }
             None => self.tree.add(
                 W::new(span)
                     .with_node(Node::Literal { val: number })
-                    .with_type(ty.into()),
+                    .with_type(num_type.into()),
             ),
         };
         Ok(match exp {
@@ -166,13 +155,13 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
                 }));
                 let right = self.tree.add(W::new(span).with_node(Node::Binary {
                     op: BinaryOp::Pow,
-                    left: base,
-                    right: exp,
+                    lhs: base,
+                    rhs: exp,
                 }));
                 self.tree.add(W::new(span).with_node(Node::Binary {
                     op: BinaryOp::Mul,
-                    left: base_node,
-                    right,
+                    lhs: base_node,
+                    rhs: right,
                 }))
             }
             None => base_node,
@@ -235,43 +224,9 @@ fn to_digit(c: u8, radix: u8) -> Option<u8> {
     None
 }
 
-fn parse_number(num: &mut &[u8]) -> (Base, Option<BigUint>) {
+pub fn parse_number(num: &mut &[u8]) -> (Base, Option<BigUint>) {
     let base = parse_base_prefix(num);
     let mut number = None;
     parse_digits(&mut number, base as u8, num);
     (base, number)
-}
-
-fn parse_type_suffix(num: &mut &[u8]) -> NumberType {
-    if num.is_empty() {
-        return NumberType {
-            kind: Arbitrary,
-            size: None,
-        };
-    };
-    let kind = match num[0] {
-        b'u' => Unsigned,
-        b'i' => Signed,
-        b'f' => Float,
-        _ => {
-            return NumberType {
-                kind: Arbitrary,
-                size: None,
-            }
-        }
-    };
-    *num = &num[1..];
-    if num.is_empty() {
-        return NumberType { kind, size: None };
-    };
-    NumberType {
-        kind,
-        size: match num[0] {
-            b'x' => {
-                *num = &num[1..];
-                Some(SYSTEM_SIZE.into())
-            }
-            _ => parse_number(num).1,
-        },
-    }
 }

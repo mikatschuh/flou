@@ -25,42 +25,17 @@ macro_rules! node {
         })
     };
     // Binary Ops
-    [$inter:expr, ($lhs:tt, add, $rhs:tt)] => {
-        Box::new(HeapNode::Binary {
-            op: BinaryOp::Add,
-            left: node![$inter, $lhs],
-            right: node![$inter, $rhs],
-        })
-    };
-
-    [$inter:expr, ($lhs:tt, mul, $rhs:tt)] => {
-        Box::new(HeapNode::Binary {
-            op: BinaryOp::Mul,
-            left: node![$inter, $lhs],
-            right: node![$inter, $rhs],
-        })
-    };
-
     [$inter:expr, ($lhs:tt, binds, $rhs:tt)] => {
         Box::new(HeapNode::Binding {
-            left: node![$inter, $lhs],
-            right: node![$inter, $rhs],
+            lhs: node![$inter, $lhs],
+            rhs: node![$inter, $rhs],
         })
     };
-
-    [$inter:expr, ($lhs:tt, dot, $rhs:tt)] => {
-        Box::new(HeapNode::Binary {
-            op: BinaryOp::Dot,
-            left: node![$inter, $lhs],
-            right: node![$inter, $rhs],
-        })
-    };
-
     [$inter:expr, ($lhs:tt, $op:tt, $rhs:tt)] => {
         Box::new(HeapNode::Binary {
             op: BinaryOp::$op,
-            left: node![$inter, $lhs],
-            right: node![$inter, $rhs],
+            lhs: node![$inter, $lhs],
+            rhs: node![$inter, $rhs],
         })
     };
 
@@ -70,24 +45,10 @@ macro_rules! node {
     };
 
     // Unary Ops
-    [$inter:expr, (neg, $lhs:tt)] => {
-        Box::new(HeapNode::Unary {
-            op: UnaryOp::Neg,
-            operand: node![$inter, $lhs]
-        })
-    };
-
-    [$inter:expr, (inc, $lhs:tt)] => {
-        Box::new(HeapNode::Unary {
-            op: UnaryOp::Increment,
-            operand: node![$inter, $lhs]
-        })
-    };
-
     [$inter:expr, ($op:tt, $lhs:tt)] => {
         Box::new(HeapNode::Unary {
             op: UnaryOp::$op,
-            operand: node![$inter, $lhs]
+            val: node![$inter, $lhs]
         })
     };
 
@@ -123,24 +84,24 @@ fn test() {
 
     assert_eq!(
         parse!("a + b * c"),
-        node![internalizer, ("a", add, ("b", mul, "c"))],
+        node![internalizer, ("a", Add, ("b", Mul, "c"))],
     );
 
     assert_eq!(
         parse!("a + b * c++"),
-        node![internalizer, (inc, ("a", add, ("b", mul, "c")))],
+        node![internalizer, (Inc, ("a", Add, ("b", Mul, "c")))],
     );
 
     assert_eq!(
         parse!("a + b * -c * d"),
-        node![internalizer, ("a", add, (("b", mul, (neg, "c")), mul, "d"))],
+        node![internalizer, ("a", Add, (("b", Mul, (Neg, "c")), Mul, "d"))],
     );
 
     assert_eq!(
         parse!("a = b * -c · d"),
         node![
             internalizer,
-            ("a", binds, (("b", mul, (neg, "c")), dot, "d"))
+            ("a", binds, (("b", Mul, (Neg, "c")), Dot, "d"))
         ],
     );
 

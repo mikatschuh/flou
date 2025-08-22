@@ -116,7 +116,10 @@ impl<'src> NodeWrapping<'src> for NodeWrapper<'src> {
         use Node::*;
 
         match node {
-            Binding { left, right } => {
+            Binding {
+                lhs: left,
+                rhs: right,
+            } => {
                 format!(
                     "= {{\n{}{}\n{}{} \n{}}}",
                     next_indentation.clone(),
@@ -141,7 +144,11 @@ impl<'src> NodeWrapping<'src> for NodeWrapper<'src> {
             Quote(quote) => format!("Quote  \"{}\"", with_written_out_escape_sequences(quote)),
             PrimitiveType(..) => todo!(),
             Unit => "()".to_owned(),
-            Binary { op, left, right } => format!(
+            Binary {
+                op,
+                lhs: left,
+                rhs: right,
+            } => format!(
                 "{op} {{\n{}{}\n{}{} \n{}}}",
                 next_indentation.clone(),
                 tree[*left].display(tree, internalizer, next_indentation.clone()),
@@ -162,33 +169,15 @@ impl<'src> NodeWrapping<'src> for NodeWrapper<'src> {
                         + " "
                 )
             ),
-            Brackets {
-                kind: Bracket::Round,
-                content,
-            } => format!(
-                "({}{}{})",
-                DISPLAY_INDENTATION_NEG_1,
-                tree[*content].display(tree, internalizer, next_indentation),
-                DISPLAY_INDENTATION_NEG_1,
-            ),
-            Brackets {
-                kind: Bracket::Squared,
-                content,
-            } => format!(
-                "[{}{}{}]",
-                DISPLAY_INDENTATION_NEG_1,
-                tree[*content].display(tree, internalizer, next_indentation),
-                DISPLAY_INDENTATION_NEG_1,
-            ),
-            Brackets {
-                kind: Bracket::Curly,
-                content,
-            } => format!(
-                "{{{}{}{}}}",
-                DISPLAY_INDENTATION_NEG_1,
-                tree[*content].display(tree, internalizer, next_indentation),
-                DISPLAY_INDENTATION_NEG_1
-            ),
+            Ref { lifetime, val } => {
+                format!(
+                    "'{} -> {}",
+                    lifetime
+                        .as_ref()
+                        .map_or("_", |lifetime| internalizer.resolve(*lifetime)),
+                    tree[*val].display(tree, internalizer, indentation)
+                )
+            }
             List(list) => {
                 if list.len() < 2 {
                     format!(
@@ -449,8 +438,8 @@ pub enum Node<'src> {
     }, // if/loop condition then_body (else else_body)
 
     Binding {
-        left: NodeId<'src>,
-        right: NodeId<'src>,
+        lhs: NodeId<'src>,
+        rhs: NodeId<'src>,
     },
     // single values
     Literal {
@@ -474,8 +463,8 @@ pub enum Node<'src> {
     // operations
     Binary {
         op: BinaryOp,
-        left: NodeId<'src>,
-        right: NodeId<'src>,
+        lhs: NodeId<'src>,
+        rhs: NodeId<'src>,
     }, // left op right
     Chain {
         first: NodeId<'src>,
@@ -485,14 +474,15 @@ pub enum Node<'src> {
         op: UnaryOp,
         val: NodeId<'src>,
     }, // op operand
+
+    Ref {
+        lifetime: Option<Symbol<'src>>,
+        val: NodeId<'src>,
+    },
     Fields {
         val: NodeId<'src>,
         fields: comp::Vec<Symbol<'src>, 1>,
     },
-    Brackets {
-        kind: Bracket,
-        content: NodeId<'src>,
-    }, // squared content squared
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HeapNode<'src> {
@@ -505,8 +495,8 @@ pub enum HeapNode<'src> {
     }, // if/loop condition then_body (else else_body)
 
     Binding {
-        left: Box<HeapNode<'src>>,
-        right: Box<HeapNode<'src>>,
+        lhs: Box<HeapNode<'src>>,
+        rhs: Box<HeapNode<'src>>,
     },
     // single values
     Literal {
@@ -530,8 +520,8 @@ pub enum HeapNode<'src> {
     // operations
     Binary {
         op: BinaryOp,
-        left: Box<HeapNode<'src>>,
-        right: Box<HeapNode<'src>>,
+        lhs: Box<HeapNode<'src>>,
+        rhs: Box<HeapNode<'src>>,
     }, // left op right
     Chain {
         first: Box<HeapNode<'src>>,
@@ -539,16 +529,16 @@ pub enum HeapNode<'src> {
     }, // first op additions[0].0 additions[0].1
     Unary {
         op: UnaryOp,
-        operand: Box<HeapNode<'src>>,
+        val: Box<HeapNode<'src>>,
     }, // op operand
+    Ref {
+        lifetime: Option<Symbol<'src>>,
+        val: Box<HeapNode<'src>>,
+    },
     Fields {
         val: Box<HeapNode<'src>>,
         fields: comp::Vec<Symbol<'src>, 1>,
     }, // val.fields
-    Brackets {
-        kind: Bracket,
-        content: Box<HeapNode<'src>>,
-    }, // squared content squared
 }
 impl<'src> Node<'src> {
     fn as_heap<W: NodeWrapping<'src>>(&'src self, tree: &'src Tree<'src, W>) -> HeapNode<'src> {
@@ -571,9 +561,12 @@ impl<'src> Node<'src> {
                 then_body: then_body.as_heap(tree),
                 else_body: else_body.as_ref().map(|else_body| else_body.as_heap(tree)),
             },
-            Self::Binding { left, right } => Binding {
-                left: boxed(left, tree),
-                right: boxed(right, tree),
+            Self::Binding {
+                lhs: left,
+                rhs: right,
+            } => Binding {
+                lhs: boxed(left, tree),
+                rhs: boxed(right, tree),
             },
             Self::Literal { val } => Literal { val: val.clone() },
             Self::Quote(string) => Quote(string.clone()),
@@ -601,10 +594,14 @@ impl<'src> Node<'src> {
                     .map(|val| boxed(val, tree))
                     .collect::<comp::Vec<_, 2>>(),
             ),
-            Self::Binary { op, left, right } => Binary {
+            Self::Binary {
+                op,
+                lhs: left,
+                rhs: right,
+            } => Binary {
                 op: *op,
-                left: boxed(left, tree),
-                right: boxed(right, tree),
+                lhs: boxed(left, tree),
+                rhs: boxed(right, tree),
             },
             Self::Chain { first, additions } => Chain {
                 first: boxed(first, tree),
@@ -615,98 +612,20 @@ impl<'src> Node<'src> {
             },
             Self::Unary { op, val: operand } => Unary {
                 op: *op,
-                operand: boxed(operand, tree),
+                val: boxed(operand, tree),
+            },
+            Self::Ref { lifetime, val } => Ref {
+                lifetime: *lifetime,
+                val: boxed(val, tree),
             },
             Self::Fields { val, fields } => Fields {
                 val: boxed(val, tree),
                 fields: fields.clone(),
             },
-            Self::Brackets { kind, content } => Brackets {
-                kind: *kind,
-                content: boxed(content, tree),
-            },
         }
     }
 }
-/*
-impl Node {
-    fn as_code<W: Clone + std::fmt::Debug + Unwrapable>(
-        &self,
-        node_buffer: &NodeBuffer<W>,
-        indentation: String,
-    ) -> String {
-        let next_indentation = indentation.clone() + "  ";
-        use Node::*;
-        match self {
-            Num(num) => format!("Num({:?})", num),
-            Id(name) => format!("Id(String::from(\"{}\"))", name),
-            Quote(quote) => format!("Quote(String::from(\"{}\"))", quote),
 
-            Sum(content) => format!("Sum({})", to_rust_code(content, indentation)),
-            Com(content) => format!("Com({})", to_rust_code(content, indentation)),
-            List(content) => {
-                format!("List({})", to_rust_code(content, indentation))
-            }
-            UnaryOp { kind, operand } => {
-                format!(
-                    "UnaryOp{{kind: {:?}, operand: Box::new({})}}",
-                    kind,
-                    operand.unwrap().as_code(indentation)
-                )
-            }
-            ChainedOp { first, additions } => {
-                format!(
-                    "{}{{\n{}{}: {}::new({}),\n{}{}: vec![{}]\n{}}}",
-                    "ChainedOp".truecolor(239, 229, 182),
-                    next_indentation.clone(),
-                    "first".truecolor(164, 189, 255),
-                    "Box".truecolor(239, 229, 182),
-                    first.unwrap().as_code(next_indentation.clone()),
-                    next_indentation.clone(),
-                    "additions".truecolor(164, 189, 255),
-                    additions
-                        .iter()
-                        .map(|n| format!(
-                            "({:?}, {})",
-                            n.0,
-                            n.1.unwrap().as_code(next_indentation.clone())
-                        ))
-                        .collect::<Vec<String>>()
-                        .join(", "),
-                    indentation
-                )
-            }
-            Scope(..) => todo!(),
-            Conditional { .. } => todo!(),
-
-            BinaryOp { kind, left, right } => format!(
-                "{} {{\n{}{}: {}, \n{}{}: {}::new({}), \n{}{}: {}::new({})\n{}}}",
-                "BinaryOp".truecolor(239, 229, 182),
-                next_indentation.clone(),
-                "kind".truecolor(164, 189, 255),
-                format!("{:?}", kind).truecolor(239, 229, 182),
-                next_indentation.clone(),
-                "left".truecolor(164, 189, 255),
-                "Box".truecolor(239, 229, 182),
-                left.unwrap().as_code(next_indentation.clone()),
-                next_indentation.clone(),
-                "right".truecolor(164, 189, 255),
-                "Box".truecolor(239, 229, 182),
-                right.unwrap().as_code(next_indentation.clone()),
-                indentation
-            ),
-        }
-    }
-}
-pub fn to_rust_code<W: Clone + Debug + Unwrapable>(v: &Vec<W>, indentation: String) -> String {
-    format!(
-        "vec![{}]",
-        v.iter()
-            .map(|n| n.unwrap().as_code(indentation.clone()))
-            .collect::<Vec<String>>()
-            .join(", "),
-    )
-}*/
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct NodeId<'tree> {
     _marker: PhantomData<&'tree ()>,

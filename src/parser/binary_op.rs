@@ -29,12 +29,12 @@ pub enum BinaryOp {
     And,  // a && b
     Nand, // a !&& b
 
-    Equal,          // a == b
-    NonEqual,       // a != b
-    Smaller,        // a < b
-    GreaterOrEqual, // a >= b
-    Greater,        // a > b
-    SmallerOrEqual, // a <= b
+    Eq,        // a == b
+    Ne,        // a != b
+    Smaller,   // a < b
+    GreaterEq, // a >= b
+    Greater,   // a > b
+    SmallerEq, // a <= b
 
     BitShiftLeft,  // a << b
     BitShiftRight, // a >> b
@@ -68,7 +68,7 @@ impl fmt::Display for BinaryOp {
 }
 use BinaryOp::*;
 impl BinaryOp {
-    pub fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
             Write => ":=",
 
@@ -99,12 +99,12 @@ impl BinaryOp {
             And => "&&",
             Nand => "!&&",
 
-            Equal => "==",
-            NonEqual => "!=",
+            Eq => "==",
+            Ne => "!=",
             Smaller => "<",
-            GreaterOrEqual => ">=",
+            GreaterEq => ">=",
             Greater => ">",
-            SmallerOrEqual => "<=",
+            SmallerEq => "<=",
 
             BitShiftLeft => "<<",
             BitShiftRight => ">>",
@@ -132,10 +132,7 @@ impl BinaryOp {
         }
     }
 
-    pub fn is_chained(self) -> bool {
-        matches!(
-            self,
-            Equal | NonEqual | Smaller | SmallerOrEqual | Greater | GreaterOrEqual,
-        )
+    pub const fn is_chained(self) -> bool {
+        matches!(self, Eq | Ne | Smaller | SmallerEq | Greater | GreaterEq,)
     }
 }

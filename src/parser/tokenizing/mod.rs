@@ -117,7 +117,7 @@ impl<'src> Tokenizer<'src> {
         self.buffer.first()
     }
 
-    pub fn next_if(&mut self, predicate: impl FnOnce(&Token<'src>) -> bool) -> Option<Token> {
+    pub fn next_if(&mut self, predicate: impl FnOnce(&Token<'src>) -> bool) -> Option<Token<'src>> {
         if self.buffer.is_empty() {
             self.restock_tokens();
         }

@@ -1,10 +1,8 @@
 use crate::{
     error::{ErrorCode, Errors, Position, Span},
-    parser::{
-        binding_pow::SINGLE_VALUE,
-        intern::{Internalizer, Symbol},
-    },
+    parser::intern::{Internalizer, Symbol},
     tree::{Bracket, Jump, NodeId, NodeWrapper, NodeWrapping, Path, Tree},
+    typing::TypeParser,
     utilities::{Rc, Ref},
 };
 use tokenizing::{
@@ -44,7 +42,14 @@ macro_rules! unpack {
     };
 }
 
-pub fn parse<'src>(text: &'src str, path: &'static std::path::Path) -> (String, Rc<Errors<'src>>) {
+pub fn parse<'src>(
+    text: &'src str,
+    path: &'static std::path::Path,
+) -> (
+    (NodeId<'src>, Tree<'src, NodeWrapper<'src>>),
+    Rc<Internalizer<'src>>,
+    Rc<Errors<'src>>,
+) {
     let errors = Rc::new(Errors::empty(path));
     let internalizer = Rc::new(Internalizer::new());
 
@@ -55,13 +60,14 @@ pub fn parse<'src>(text: &'src str, path: &'static std::path::Path) -> (String, 
     )
     .parse();
 
-    (tree.to_string(root, &internalizer), errors)
+    ((root, tree), internalizer, errors)
 }
 
 struct Parser<'src, W: NodeWrapping<'src>> {
     tokenizer: Tokenizer<'src>,
     errors: Rc<Errors<'src>>,
     internalizer: Rc<Internalizer<'src>>,
+    type_parser: TypeParser,
     tree: Tree<'src, W>,
     dash_slot: Option<NodeId<'src>>,
 }
@@ -76,6 +82,7 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
             tokenizer,
             errors,
             internalizer,
+            type_parser: TypeParser::new(),
             tree: Tree::new(),
             dash_slot: None,
         }
@@ -96,13 +103,7 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
         let mut lhs = self.tokenizer.next()?.nud(self, min_bp, flags)?;
 
         while let Some(tok) = self.tokenizer.peek() {
-            let bp = if tok.kind == TokenKind::Comma
-                && matches!(flags.in_brackets, Some(Bracket::Squared | Bracket::Round))
-            {
-                0
-            } else {
-                tok.binding_pow()
-            };
+            let bp = tok.binding_pow(flags.comma_override());
             if flags.in_brackets.is_none() {
                 if let TokenKind::Closed(closed) = tok.kind {
                     let Token { span, .. } = self.tokenizer.next().unwrap();
@@ -194,7 +195,7 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
 
                 if !self.tokenizer.next_is(|tok| tok.is_terminator()) {
                     self.dash_slot = None;
-                    let node = self.pop_expr(pos, SINGLE_VALUE, flags);
+                    let node = self.pop_expr(pos, u8::MAX, flags);
                     self.tree.move_to(node, dash_slot);
                 }
             }
@@ -219,23 +220,15 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
 
     /// Pops an identifier if the next token is one. If not it generates the correct error message
     /// and leaves the token there. The position indicates were the identifier is expected to go.
-    fn pop_identifier(&mut self, pos: Position) -> Option<(Span, Symbol<'src>)> {
-        if let Some(Token {
-            kind, span, src, ..
-        }) = self.tokenizer.peek()
+    fn pop_identifier(&mut self, pos: Position) -> (Span, Symbol<'src>) {
+        if let Some(tok) = self
+            .tokenizer
+            .next_if(|tok| matches!(tok.kind, TokenKind::Ident))
         {
-            if let TokenKind::Ident = kind {
-                let Token { src, span, .. } = self.tokenizer.next().unwrap();
-                Some((span, self.internalizer.get(src)))
-            } else {
-                self.errors
-                    .push(*span, ErrorCode::ExpectedIdent { found: src });
-                None
-            }
+            (tok.span, self.internalizer.get(tok.src))
         } else {
-            self.errors
-                .push(pos.into(), ErrorCode::ExpectedIdentFoundEOF);
-            None
+            self.errors.push(pos.into(), ErrorCode::ExpectedIdent);
+            (pos.into(), self.internalizer.empty())
         }
     }
 
@@ -278,6 +271,9 @@ impl<'src, 'caller> Flags<'src, 'caller> {
     fn in_brackets(mut self, bracket: Bracket) -> Self {
         self.in_brackets = Some(bracket);
         self
+    }
+    fn comma_override(self) -> bool {
+        matches!(self.in_brackets, Some(Bracket::Round | Bracket::Squared))
     }
     fn outside_of_brackets(mut self) -> Self {
         self.in_brackets = None;

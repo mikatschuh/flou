@@ -1,5 +1,7 @@
 use std::{collections::HashMap, marker::PhantomData};
 
+const EMPTY: &str = "{empty}";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Symbol<'internalizer> {
     _marker: PhantomData<&'internalizer ()>,
@@ -13,10 +15,15 @@ pub struct Internalizer<'src> {
 
 impl<'src> Internalizer<'src> {
     pub fn new() -> Self {
-        Self {
-            map: HashMap::new(),
-            vec: Vec::new(),
-        }
+        let map = HashMap::from([(
+            EMPTY,
+            Symbol {
+                _marker: PhantomData,
+                idx: 0,
+            },
+        )]);
+        let vec = vec![EMPTY];
+        Self { map, vec }
     }
 
     pub fn get(&mut self, name: &'src str) -> Symbol<'src> {
@@ -30,6 +37,14 @@ impl<'src> Internalizer<'src> {
         self.vec.push(name);
         self.map.insert(name, id);
         id
+    }
+
+    #[inline]
+    pub const fn empty(&mut self) -> Symbol<'src> {
+        Symbol {
+            _marker: PhantomData,
+            idx: 0,
+        }
     }
 
     pub fn resolve(&self, sym: Symbol) -> &str {

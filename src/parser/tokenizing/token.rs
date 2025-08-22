@@ -29,7 +29,6 @@ pub enum TokenKind {
     NotLeft,      // !<
     LeftEqual,    // <=
     NotLeftEqual, // !<=
-    LeftArrow,    // <-
 
     Right,         // >
     RightRight,    // >>
@@ -115,7 +114,6 @@ impl Display for Token<'_> {
                 NotLeft => "!<",
                 LeftEqual => "<=",
                 NotLeftEqual => "!<=",
-                LeftArrow => "<-",
 
                 Right => ">",
                 RightRight => ">>",
@@ -259,7 +257,6 @@ impl TokenKind {
             },
             Left => match c {
                 '<' => Some(LeftLeft),
-                '-' => Some(LeftArrow),
                 '=' => Some(LeftEqual),
                 _ => None,
             },
@@ -273,10 +270,6 @@ impl TokenKind {
             },
             NotLeftEqual => match c {
                 '=' => Some(NotLeftEqual),
-                _ => None,
-            },
-            LeftArrow => match c {
-                '-' => Some(LeftArrow),
                 _ => None,
             },
             Right => match c {
@@ -408,7 +401,7 @@ impl TokenKind {
             ),
             '>' => matches!(self, RightArrow | Right | RightRight | NotRight),
             '+' => matches!(self, Plus | PlusPlus),
-            '-' => matches!(self, Dash(..) | LeftArrow),
+            '-' => matches!(self, Dash(..)),
             '*' => self == Star,
             '/' => self == Slash,
             '%' => self == Percent,
@@ -443,9 +436,6 @@ impl TokenKind {
         use UnaryOp::*;
         match self {
             Self::Not => Some(Not),
-            RightArrow => Some(Ref),
-            Plus => Some(Pos),
-            PlusPlus => Some(Pos),
             _ => None,
         }
     }
@@ -453,19 +443,19 @@ impl TokenKind {
     pub fn as_infix(self) -> Option<BinaryOp> {
         use BinaryOp::*;
         match self {
-            EqualEqual => Some(Equal),
-            NotEqual => Some(NonEqual),
+            EqualEqual => Some(Eq),
+            NotEqual => Some(Ne),
 
             Left => Some(Smaller),
             LeftLeft => Some(BitShiftLeft),
-            NotLeft => Some(GreaterOrEqual),
-            LeftEqual => Some(SmallerOrEqual),
+            NotLeft => Some(GreaterEq),
+            LeftEqual => Some(SmallerEq),
             NotLeftEqual => Some(Greater),
 
             Right => Some(Greater),
             RightRight => Some(BitShiftRight),
-            NotRight => Some(SmallerOrEqual),
-            RightEqual => Some(GreaterOrEqual),
+            NotRight => Some(SmallerEq),
+            RightEqual => Some(GreaterEq),
             NotRightEqual => Some(Smaller),
 
             Plus => Some(Add),
@@ -517,8 +507,7 @@ impl TokenKind {
     pub fn as_postfix(self) -> Option<UnaryOp> {
         use UnaryOp::*;
         match self {
-            LeftArrow => Some(Ref),
-            PlusPlus => Some(Increment),
+            PlusPlus => Some(Inc),
             _ => None,
         }
     }

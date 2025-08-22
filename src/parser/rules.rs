@@ -7,6 +7,7 @@ use crate::{
     error::ErrorCode,
     parser::{
         binary_op::BinaryOp,
+        binding_pow::{self},
         keyword::Keyword,
         tokenizing::{
             resolve_escape_sequences,
@@ -152,12 +153,25 @@ impl<'src> Token<'src> {
                 }
             }
             Tick => {
-                let Some((ident_span, symbol)) = state.pop_identifier(self.span.end + 1) else {
-                    return state.parse_expr(min_bp, flags);
-                };
-                state
-                    .tree
-                    .add(W::new(self.span.start - ident_span).with_node(Node::Lifetime(symbol)))
+                let (ident_span, symbol) = state.pop_identifier(self.span.end + 1);
+                if let Some(tok) = state
+                    .tokenizer
+                    .next_if(|tok| matches!(tok.kind, RightArrow))
+                {
+                    let rhs = state.pop_expr(tok.span.end + 1, binding_pow::SINGLE_VALUE, flags);
+                    state
+                        .tree
+                        .add(
+                            W::new(ident_span - state.tree[rhs].span()).with_node(Node::Ref {
+                                lifetime: Some(symbol),
+                                val: rhs,
+                            }),
+                        )
+                } else {
+                    state
+                        .tree
+                        .add(W::new(self.span.start - ident_span).with_node(Node::Lifetime(symbol)))
+                }
             }
             Open(own_bracket) => {
                 if let Some(content) = state.parse_expr(0, flags.in_brackets(own_bracket)) {
@@ -193,24 +207,30 @@ impl<'src> Token<'src> {
                     lhs
                 } else if count.get().is_odd() {
                     let op = UnaryOp::Neg;
-                    let operand = state.pop_expr(self.span.end + 1, op.bp(), flags);
+                    let operand = state.pop_expr(self.span.end + 1, op.binding_pow(), flags);
                     state
                         .tree
                         .add(W::new(self.span).with_node(Node::Unary { op, val: operand }))
                 } else {
-                    state.pop_expr(self.span.end + 1, UnaryOp::Pos.bp(), flags)
+                    state.pop_expr(self.span.end + 1, UnaryOp::Neg.binding_pow(), flags)
                 }
+            }
+            RightArrow => {
+                let val = state.pop_expr(self.span.end + 1, min_bp, flags);
+                state.tree.add(W::new(self.span).with_node(Node::Ref {
+                    lifetime: None,
+                    val,
+                }))
+            }
+            Plus | PlusPlus | NotNot => {
+                state.pop_expr(self.span.end + 1, UnaryOp::Neg.binding_pow(), flags)
             }
             kind => match kind.as_prefix() {
                 Some(op) => {
-                    let operand = state.pop_expr(self.span.end + 1, op.bp(), flags);
-                    if op == UnaryOp::Pos {
-                        operand
-                    } else {
-                        state
-                            .tree
-                            .add(W::new(self.span).with_node(Node::Unary { op, val: operand }))
-                    }
+                    let val = state.pop_expr(self.span.end + 1, op.binding_pow(), flags);
+                    state
+                        .tree
+                        .add(W::new(self.span).with_node(Node::Unary { op, val }))
                 }
                 _ => {
                     state.tokenizer.buffer(self);
@@ -247,19 +267,11 @@ impl<'src> Token<'src> {
                 let end = state.handle_terminator(self.span.end + 1, self.span, bracket, flags);
                 state.tree[rhs].span_mut().end = end.end;
                 state.tree.add(
-                    W::new(state.tree[lhs].span() - end).with_node(Node::Binary {
-                        op,
-                        left: lhs,
-                        right: rhs,
-                    }),
+                    W::new(state.tree[lhs].span() - end).with_node(Node::Binary { op, lhs, rhs }),
                 )
             }
             Comma => {
-                let bp = if matches!(flags.in_brackets, Some(Bracket::Squared | Bracket::Round)) {
-                    1
-                } else {
-                    self.right_bp()
-                };
+                let bp = binding_pow::comma(flags.comma_override());
 
                 let rhs = state.pop_expr(self.span.end + 1, bp, flags);
                 let mut chain = comp::Vec::new([lhs, rhs]);
@@ -275,18 +287,14 @@ impl<'src> Token<'src> {
                 )
             }
             Equal => {
-                let rhs = state.pop_expr(self.span.end + 1, self.right_bp(), flags);
+                let rhs = state.pop_expr(self.span.end + 1, binding_pow::BINDING, flags);
                 state.tree.add(
-                    W::new(state.tree[lhs].span() - state.tree[rhs].span()).with_node(
-                        Node::Binding {
-                            left: lhs,
-                            right: rhs,
-                        },
-                    ),
+                    W::new(state.tree[lhs].span() - state.tree[rhs].span())
+                        .with_node(Node::Binding { lhs, rhs }),
                 )
             }
             Colon => {
-                let rhs = state.pop_expr(self.span.end + 1, self.right_bp(), flags);
+                let rhs = state.pop_expr(self.span.end + 1, binding_pow::COLON, flags);
                 let mut chain = comp::Vec::new([lhs, rhs]);
                 while state
                     .tokenizer
@@ -294,7 +302,7 @@ impl<'src> Token<'src> {
                     .is_some_and(|token| token.kind == Colon)
                 {
                     let Token { span, .. } = state.tokenizer.next().unwrap();
-                    let rhs = state.pop_expr(span.end + 1, self.right_bp(), flags);
+                    let rhs = state.pop_expr(span.end + 1, binding_pow::COLON, flags);
                     chain.push(rhs)
                 }
                 state.tree.add(
@@ -308,14 +316,10 @@ impl<'src> Token<'src> {
                     src: &self.src[1..2],
                     kind: Pipe,
                 });
-                let rhs = state.pop_expr(self.span.end + 1, self.right_bp(), flags);
+                let rhs = state.pop_expr(self.span.end + 1, binding_pow::BINDING, flags);
                 state.tree.add(
-                    W::new(state.tree[lhs].span() - state.tree[rhs].span()).with_node(
-                        Node::Binding {
-                            left: lhs,
-                            right: rhs,
-                        },
-                    ),
+                    W::new(state.tree[lhs].span() - state.tree[rhs].span())
+                        .with_node(Node::Binding { lhs, rhs }),
                 )
             }
             Dash(count) if count.get() > 1 => {
@@ -325,21 +329,17 @@ impl<'src> Token<'src> {
                 }
                 state.tree.add(
                     W::new(state.tree[lhs].span() - self.span).with_node(Node::Unary {
-                        op: UnaryOp::Decrement,
+                        op: UnaryOp::Dec,
                         val: lhs,
                     }),
                 )
             }
             Dash(..) => {
-                let rhs = state.pop_expr(self.span.end + 1, self.right_bp(), flags);
+                let op = BinaryOp::Sub;
+                let rhs = state.pop_expr(self.span.end + 1, op.binding_pow(), flags);
                 state.tree.add(
-                    W::new(state.tree[lhs].span() - state.tree[rhs].span()).with_node(
-                        Node::Binary {
-                            op: BinaryOp::Sub,
-                            left: lhs,
-                            right: rhs,
-                        },
-                    ),
+                    W::new(state.tree[lhs].span() - state.tree[rhs].span())
+                        .with_node(Node::Binary { op, lhs, rhs }),
                 )
             }
             _ => {
@@ -349,7 +349,7 @@ impl<'src> Token<'src> {
                             .with_node(Node::Unary { op, val: lhs }),
                     )
                 } else if let Some(op) = self.kind.as_infix() {
-                    let rhs = state.pop_expr(self.span.end + 1, self.right_bp(), flags);
+                    let rhs = state.pop_expr(self.span.end + 1, op.binding_pow(), flags);
                     if op.is_chained() {
                         let mut chain = comp::Vec::new([(op, rhs)]);
                         while let Some(op) =
@@ -357,7 +357,7 @@ impl<'src> Token<'src> {
                         {
                             if op.is_chained() {
                                 let Token { span, .. } = state.tokenizer.next().unwrap();
-                                let rhs = state.pop_expr(span.end + 1, self.right_bp(), flags);
+                                let rhs = state.pop_expr(span.end + 1, op.binding_pow(), flags);
                                 chain.push((op, rhs));
                                 continue;
                             }
@@ -372,23 +372,18 @@ impl<'src> Token<'src> {
                         )
                     } else {
                         state.tree.add(
-                            W::new(state.tree[lhs].span() - state.tree[rhs].span()).with_node(
-                                Node::Binary {
-                                    op,
-                                    left: lhs,
-                                    right: rhs,
-                                },
-                            ),
+                            W::new(state.tree[lhs].span() - state.tree[rhs].span())
+                                .with_node(Node::Binary { op, lhs, rhs }),
                         )
                     }
                 } else {
                     state.tokenizer.buffer(self);
 
-                    let Some(rhs) = state.parse_expr(self.right_bp(), flags) else {
+                    let Some(rhs) = state.parse_expr(binding_pow::STATEMENT, flags) else {
                         return lhs;
                     };
                     let mut chain = comp::Vec::new([lhs, rhs]);
-                    while let Some(rhs) = state.parse_expr(self.right_bp(), flags) {
+                    while let Some(rhs) = state.parse_expr(binding_pow::STATEMENT, flags) {
                         chain.push(rhs)
                     }
                     state.tree.add(

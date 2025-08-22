@@ -93,11 +93,11 @@ impl Task {
                 file.read_to_string(&mut content)?;
 
                 let now = Instant::now();
-                let (ast, errors) = parse(&content, path);
+                let ((root, tree), internalizer, errors) = parse(&content, path);
                 println!(
                     "{}\n{}\n\nparsed in: {}",
                     *errors,
-                    ast,
+                    tree.to_string(root, &internalizer),
                     format_time(now.elapsed().as_nanos()),
                 );
             }

@@ -1,13 +1,11 @@
 use std::fmt::Display;
 
-use num::BigUint;
-
 use crate::{
-    parser::intern::Internalizer,
+    parser::{intern::Internalizer, num},
     tree::{NodeId, NodeWrapping, Tree},
 };
 
-pub type OptSize = Option<BigUint>;
+pub type OptSize = Option<usize>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NumberKind {
@@ -74,5 +72,52 @@ impl<'tree> Type<'tree> {
             Number(num) => format!("{num}"),
             Expr(node) => tree[*node].display(tree, internalizer, indentation),
         }
+    }
+}
+
+#[cfg(target_pointer_width = "64")]
+const SYSTEM_SIZE: usize = 64;
+
+#[cfg(target_pointer_width = "32")]
+const SYSTEM_SIZE: usize = 32;
+
+#[cfg(target_pointer_width = "16")]
+const SYSTEM_SIZE: usize = 16;
+
+pub struct TypeParser {
+    target_ptr_size: usize,
+}
+
+impl TypeParser {
+    pub const fn new() -> Self {
+        Self {
+            target_ptr_size: SYSTEM_SIZE,
+        }
+    }
+    pub fn parse_number_type(&self, mut input: &[u8]) -> Option<NumberType> {
+        let kind = match input.get(0)? {
+            b'u' => Unsigned,
+            b'i' => Signed,
+            b'f' => Float,
+            _ => return None,
+        };
+        input = &input[1..];
+        if input.is_empty() {
+            return Some(NumberType { kind, size: None });
+        };
+        Some(NumberType {
+            kind,
+            size: match input {
+                b"x" => Some(self.target_ptr_size),
+                _ => Some({
+                    let parsed_size = num::parse_number(&mut input).1?.to_u64_digits();
+                    let size = parsed_size.first()?;
+                    if parsed_size.first().is_some() {
+                        return None;
+                    }
+                    *size as usize
+                }),
+            },
+        })
     }
 }
