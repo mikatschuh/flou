@@ -364,11 +364,13 @@ impl<'src> Jump<NodeId<'src>> {
         }
     }
 }
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Path<P: Clone + Debug + PartialEq + Eq> {
     pub content: P,
     pub jump: Option<Box<Jump<P>>>,
 }
+
 impl<P: Clone + Debug + PartialEq + Eq> Path<P> {
     #[inline]
     pub fn new(content: P) -> Self {
@@ -644,6 +646,7 @@ impl<'tree> NodeId<'tree> {
 #[derive(Clone, Debug)]
 pub struct Tree<'src, W: NodeWrapping<'src>> {
     _marker: PhantomData<&'src ()>,
+    pub root: Option<NodeId<'src>>,
     nodes: Vec<W>,
 }
 impl<'src, Wrapper: NodeWrapping<'src>> Index<NodeId<'src>> for Tree<'src, Wrapper> {
@@ -661,6 +664,7 @@ impl<'src, W: NodeWrapping<'src> + 'src> Tree<'src, W> {
     pub fn new() -> Self {
         Self {
             _marker: PhantomData,
+            root: None,
             nodes: vec![],
         }
     }
@@ -682,9 +686,14 @@ impl<'src, W: NodeWrapping<'src> + 'src> Tree<'src, W> {
 }
 
 impl<'src, W: NodeWrapping<'src>> Tree<'src, W> {
-    pub fn to_string(&'src self, root: NodeId<'src>, internalizer: &Internalizer<'src>) -> String {
-        self[root]
-            .display(self, internalizer, String::new())
-            .to_string()
+    pub fn to_string(&'src self, internalizer: &Internalizer<'src>) -> String {
+        self.root.map_or_else(
+            || "None".to_owned(),
+            |root| {
+                self[root]
+                    .display(self, internalizer, String::new())
+                    .to_string()
+            },
+        )
     }
 }

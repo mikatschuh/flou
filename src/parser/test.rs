@@ -72,13 +72,13 @@ fn test() {
 
     macro_rules! parse {
         ($text:expr) => {{
-            let (root, tree) = Parser::<NodeWrapper>::new(
+            let tree = Parser::<NodeWrapper>::new(
                 Tokenizer::new($text, errors.clone()),
                 internalizer.clone(),
                 errors.clone(),
             )
             .parse();
-            tree.clone().build_graph(root)
+            tree.clone().build_graph(tree.root.unwrap())
         }};
     }
 
@@ -124,13 +124,13 @@ fn test_number_parsing() {
 
     macro_rules! parse {
         ($text:expr) => {{
-            let (root, tree) = Parser::<NodeWrapper>::new(
+            let tree = Parser::<NodeWrapper>::new(
                 Tokenizer::new($text, errors.clone()),
                 internalizer.clone(),
                 errors.clone(),
             )
             .parse();
-            tree.clone().build_graph(root)
+            tree.clone().build_graph(tree.root.unwrap())
         }};
     }
 

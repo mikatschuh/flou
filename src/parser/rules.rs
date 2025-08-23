@@ -8,24 +8,21 @@ use crate::{
     parser::{
         binary_op::BinaryOp,
         binding_pow::{self},
+        item::{Function, Generics},
         keyword::Keyword,
         tokenizing::{
             resolve_escape_sequences,
             token::{Token, TokenKind::*},
         },
         unary_op::UnaryOp,
-        Flags,
-        Location::*,
+        Flags, InBrackets,
+        Location::{self, *},
         Parser,
     },
     tree::{Bracket, Jump, Node, NodeId, NodeWrapping, Note},
 };
 
 impl<'src> Token<'src> {
-    pub fn is_terminator(self) -> bool {
-        matches!(self.kind, Closed(..))
-    }
-
     pub(super) fn nud<'caller, W: NodeWrapping<'src> + 'src>(
         self,
         state: &mut Parser<'src, W>,
@@ -104,7 +101,7 @@ impl<'src> Token<'src> {
                             state.clean_up_after_jump();
                             return None;
                         }
-                        FuncArgType => {
+                        FuncArg => {
                             state.errors.push(
                                 self.span,
                                 ErrorCode::JumpInsideFuncArg { keyword: self.src },
@@ -125,7 +122,7 @@ impl<'src> Token<'src> {
                             state.clean_up_after_jump();
                             return None;
                         }
-                        FuncArgType => {
+                        FuncArg => {
                             state.errors.push(
                                 self.span,
                                 ErrorCode::JumpInsideFuncArg { keyword: self.src },
@@ -137,12 +134,16 @@ impl<'src> Token<'src> {
                     Return => match flags.loc {
                         Path(jump) => {
                             jump.write(Some(Box::new(Jump::Return {
-                                val: state.parse_path(self.span.end + 1, 4, flags.in_brackets),
+                                val: state.parse_path(
+                                    self.span.end + 1,
+                                    binding_pow::STATEMENT,
+                                    flags.in_brackets,
+                                ),
                             })));
                             state.clean_up_after_jump();
                             return None;
                         }
-                        FuncArgType => {
+                        FuncArg => {
                             state.errors.push(
                                 self.span,
                                 ErrorCode::JumpInsideFuncArg { keyword: self.src },
@@ -174,14 +175,25 @@ impl<'src> Token<'src> {
                 }
             }
             Open(own_bracket) => {
-                if let Some(content) = state.parse_expr(0, flags.in_brackets(own_bracket)) {
-                    let end =
-                        state.handle_terminator(self.span.end + 1, self.span, own_bracket, flags);
+                if let Some(mut content) =
+                    state.parse_expr(0, flags.in_brackets(InBrackets::Container))
+                {
+                    state.parse_list(&mut content, flags);
+                    let end = state.handle_closed_bracket(
+                        self.span.end + 1,
+                        self.span,
+                        own_bracket,
+                        flags,
+                    );
                     state.tree[content].span_mut().end = end.end;
                     content
                 } else {
-                    let end =
-                        state.handle_terminator(self.span.end + 1, self.span, own_bracket, flags);
+                    let end = state.handle_closed_bracket(
+                        self.span.end + 1,
+                        self.span,
+                        own_bracket,
+                        flags,
+                    );
                     state
                         .tree
                         .add(W::new(self.span.start - end).with_node(Node::Unit))
@@ -234,7 +246,7 @@ impl<'src> Token<'src> {
                 }
                 _ => {
                     state.tokenizer.buffer(self);
-                    state.tree.add(W::new(self.span.start.into()))
+                    return None;
                 }
             },
         })
@@ -257,34 +269,113 @@ impl<'src> Token<'src> {
                     Bracket::Squared => BinaryOp::Index,
                     _ => unreachable!(),
                 };
-                let rhs = state
-                    .parse_expr(0, flags.in_brackets(bracket))
-                    .unwrap_or_else(|| {
+                let flags = flags.in_brackets(InBrackets::Application);
+
+                let Some(mut content) = state.parse_expr(binding_pow::STATEMENT, flags) else {
+                    let content = state
+                        .tree
+                        .add(W::new(self.span.end() + 1).with_node(Node::Unit));
+                    let end =
+                        state.handle_closed_bracket(self.span.end + 1, self.span, bracket, flags);
+                    return state
+                        .tree
+                        .add(
+                            W::new(state.tree[lhs].span() - end).with_node(Node::Binary {
+                                op,
+                                lhs,
+                                rhs: content,
+                            }),
+                        );
+                };
+
+                if let Some(arg_type) =
+                    state.parse_expr(binding_pow::STATEMENT, flags.location(Location::FuncArg))
+                {
+                    let (func_name, generics) = if let Some(Node::Binary {
+                        op: BinaryOp::Index,
+                        lhs,
+                        rhs,
+                    }) = state.tree[lhs].node()
+                    {
+                        if let Some(Node::Ident(name)) = state.tree[*lhs].node() {
+                            *name
+                        } else {
+                            state
+                                .errors
+                                .push(state.tree[*lhs].span(), ErrorCode::ExpectedFunctionName);
+                            state.internalizer.empty()
+                        };
+                        todo!()
+                    } else if let Some(Node::Ident(name)) = state.tree[lhs].node() {
+                        (*name, Generics::new())
+                    } else {
                         state
-                            .tree
-                            .add(W::new(self.span - (self.span + 1)).with_node(Node::Unit))
-                    });
-                let end = state.handle_terminator(self.span.end + 1, self.span, bracket, flags);
-                state.tree[rhs].span_mut().end = end.end;
-                state.tree.add(
-                    W::new(state.tree[lhs].span() - end).with_node(Node::Binary { op, lhs, rhs }),
-                )
-            }
-            Comma => {
-                let bp = binding_pow::comma(flags.comma_override());
+                            .errors
+                            .push(state.tree[lhs].span(), ErrorCode::ExpectedFunctionName);
+                        (state.internalizer.empty(), Generics::new())
+                    };
 
-                let rhs = state.pop_expr(self.span.end + 1, bp, flags);
-                let mut chain = comp::Vec::new([lhs, rhs]);
+                    let mut args = vec![(content, arg_type)];
+                    while let Some(Token { span, .. }) =
+                        state.tokenizer.next_if(|tok| tok.kind == Comma)
+                    {
+                        let arg = state.pop_expr(span.end + 1, binding_pow::STATEMENT, flags);
+                        let arg_type = state.pop_expr(
+                            state.tree[arg].span().end + 1,
+                            binding_pow::STATEMENT,
+                            flags,
+                        );
 
-                while let Some(Token { kind: Comma, .. }) = state.tokenizer.peek() {
-                    let Token { span, .. } = state.tokenizer.next().unwrap();
-                    chain.push(state.pop_expr(span.end + 1, bp, flags));
+                        args.push((arg, arg_type));
+                    }
+                    let end =
+                        state.handle_closed_bracket(self.span.end + 1, self.span, bracket, flags);
+
+                    let return_type = state.pop_expr(end.end + 1, binding_pow::STATEMENT, flags);
+                    let body = if state
+                        .tokenizer
+                        .next_is(|tok| tok.kind == Closed(Bracket::Curly))
+                    {
+                        Some(state.parse_path(
+                            state.tree[return_type].span().end + 1,
+                            binding_pow::STATEMENT,
+                            flags.in_brackets,
+                        ))
+                    } else {
+                        None
+                    };
+                    let end = body
+                        .as_ref()
+                        .map_or_else(
+                            || state.tree[return_type].span(),
+                            |body| state.tree[body.content].span(),
+                        )
+                        .end;
+                    let None = state.items.insert(
+                        func_name,
+                        Function {
+                            is_indexing: op == BinaryOp::Index,
+                            generics,
+                            args,
+                            return_type,
+                            body,
+                        },
+                    ) else {
+                        todo!()
+                    };
+                    state.tree.add(W::new(state.tree[lhs].span() - end))
+                } else {
+                    state.parse_list(&mut content, flags);
+                    let end =
+                        state.handle_closed_bracket(self.span.end + 1, self.span, bracket, flags);
+                    state
+                        .tree
+                        .add(W::new(self.span - end).with_node(Node::Binary {
+                            op: BinaryOp::App,
+                            lhs,
+                            rhs: content,
+                        }))
                 }
-
-                state.tree.add(
-                    W::new(state.tree[lhs].span() - state.tree[*chain.last()].span())
-                        .with_node(Node::List(chain)),
-                )
             }
             Equal => {
                 let rhs = state.pop_expr(self.span.end + 1, binding_pow::BINDING, flags);

@@ -36,8 +36,8 @@ pub enum BinaryOp {
     Greater,   // a > b
     SmallerEq, // a <= b
 
-    BitShiftLeft,  // a << b
-    BitShiftRight, // a >> b
+    Lsh, // a << b
+    Rsh, // a >> b
 
     BitOr,   // a | b
     BitNor,  // a !| b
@@ -106,8 +106,8 @@ impl BinaryOp {
             Greater => ">",
             SmallerEq => "<=",
 
-            BitShiftLeft => "<<",
-            BitShiftRight => ">>",
+            Lsh => "<<",
+            Rsh => ">>",
 
             BitOr => "|",
             BitNor => "!|",

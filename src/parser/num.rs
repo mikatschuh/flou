@@ -1,5 +1,4 @@
 use crate::parser::{
-    binding_pow,
     tokenizing::token::{Token, TokenKind},
     Flags, Parser,
 };

@@ -1,25 +1,30 @@
 use crate::{
-    parser::intern::Internalizer,
-    tree::{NodeWrapping, Tree},
+    parser::{intern::Symbol, Location, Parser},
+    tree::{NodeId, NodeWrapping, Path},
 };
 
-pub enum Item<'src, Wrapper: NodeWrapping<'src>> {
-    Function {
-        generics: Generics<'src, Wrapper>,
-        arguments: Vec<(String, Tree<'src, Wrapper>)>,
-        return_type: Tree<'src, Wrapper>,
-        body: Option<Tree<'src, Wrapper>>,
-    },
-    Distinct {
-        generics: Generics<'src, Wrapper>,
-        val: Tree<'src, Wrapper>,
-    },
-    Constant {
-        generics: Generics<'src, Wrapper>,
-        val: Tree<'src, Wrapper>,
-    },
+pub struct Function<'src> {
+    pub is_indexing: bool,
+    pub generics: Generics<'src>,
+    pub args: Vec<(NodeId<'src>, NodeId<'src>)>,
+    pub return_type: NodeId<'src>,
+    pub body: Option<Path<NodeId<'src>>>,
 }
-pub struct Generics<'src, Wrapper: NodeWrapping<'src>> {
-    parameter: Internalizer<'src>,
-    constrains: Tree<'src, Wrapper>,
+
+pub struct Generics<'src> {
+    parameter: Vec<Symbol<'src>>,
+    constrains: Option<NodeId<'src>>,
+}
+
+impl Generics<'_> {
+    pub fn new() -> Self {
+        Self {
+            parameter: vec![],
+            constrains: None,
+        }
+    }
+}
+
+impl<'src, W: NodeWrapping<'src>> Parser<'src, W> {
+    fn parse_args<'caller>(&mut self, loc: Location<'src, 'caller>) {}
 }

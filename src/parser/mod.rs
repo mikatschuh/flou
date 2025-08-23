@@ -1,7 +1,13 @@
+use std::collections::HashMap;
+
 use crate::{
+    comp,
     error::{ErrorCode, Errors, Position, Span},
-    parser::intern::{Internalizer, Symbol},
-    tree::{Bracket, Jump, NodeId, NodeWrapper, NodeWrapping, Path, Tree},
+    parser::{
+        intern::{Internalizer, Symbol},
+        item::Function,
+    },
+    tree::{Bracket, Jump, Node, NodeId, NodeWrapper, NodeWrapping, Path, Tree},
     typing::TypeParser,
     utilities::{Rc, Ref},
 };
@@ -24,43 +30,25 @@ mod test;
 pub mod tokenizing;
 pub mod unary_op;
 
-#[macro_export]
-macro_rules! unpack {
-    ($pat:pat = $expr:expr => $body:expr) => {
-        if let $pat = $expr {
-            $body
-        } else {
-            unreachable!()
-        }
-    };
-    ($expr:expr => $pat:pat => $body:expr) => {
-        if let $pat = $expr {
-            $body
-        } else {
-            unreachable!()
-        }
-    };
-}
-
 pub fn parse<'src>(
     text: &'src str,
     path: &'static std::path::Path,
 ) -> (
-    (NodeId<'src>, Tree<'src, NodeWrapper<'src>>),
+    Tree<'src, NodeWrapper<'src>>,
     Rc<Internalizer<'src>>,
     Rc<Errors<'src>>,
 ) {
     let errors = Rc::new(Errors::empty(path));
     let internalizer = Rc::new(Internalizer::new());
 
-    let (root, tree) = Parser::<NodeWrapper>::new(
+    let tree = Parser::<NodeWrapper>::new(
         Tokenizer::new(text, errors.clone()),
         internalizer.clone(),
         errors.clone(),
     )
     .parse();
 
-    ((root, tree), internalizer, errors)
+    (tree, internalizer, errors)
 }
 
 struct Parser<'src, W: NodeWrapping<'src>> {
@@ -69,8 +57,12 @@ struct Parser<'src, W: NodeWrapping<'src>> {
     internalizer: Rc<Internalizer<'src>>,
     type_parser: TypeParser,
     tree: Tree<'src, W>,
+    items: HashMap<Symbol<'src>, Function<'src>>,
+    paths: Vec<Ref<'src, Path<NodeId<'src>>>>,
+
     dash_slot: Option<NodeId<'src>>,
 }
+
 impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
     #[inline]
     fn new(
@@ -84,15 +76,17 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
             internalizer,
             type_parser: TypeParser::new(),
             tree: Tree::new(),
+            items: HashMap::new(),
+            paths: vec![],
+
             dash_slot: None,
         }
     }
     #[inline]
-    fn parse(mut self) -> (NodeId<'src>, Tree<'src, W>) {
-        (
-            self.pop_path(Position::beginning(), 0, None).content,
-            self.tree,
-        )
+    fn parse(mut self) -> Tree<'src, W> {
+        self.tree.root = Some(self.pop_path(Position::beginning(), 0, None).content);
+
+        self.tree
     }
 
     fn parse_expr<'caller>(
@@ -103,50 +97,32 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
         let mut lhs = self.tokenizer.next()?.nud(self, min_bp, flags)?;
 
         while let Some(tok) = self.tokenizer.peek() {
-            let bp = tok.binding_pow(flags.comma_override());
             if flags.in_brackets.is_none() {
                 if let TokenKind::Closed(closed) = tok.kind {
                     let Token { span, .. } = self.tokenizer.next().unwrap();
                     self.errors
                         .push(span, ErrorCode::NoOpenedBracket { closed });
-                    return Some(lhs);
+                    continue;
                 }
-            }
-            if tok.is_terminator() || bp < min_bp {
+            } // Generate missing opening bracket error
+
+            let Some(bp) = tok.binding_pow() else {
                 return Some(lhs);
-            } else {
-                lhs = self.tokenizer.next().unwrap().led(lhs, self, flags);
+            };
+            if bp < min_bp {
+                return Some(lhs);
             }
+            lhs = self.tokenizer.next().unwrap().led(lhs, self, flags);
         }
         // EOF
         Some(lhs)
-    }
-
-    fn pop_path(
-        &mut self,
-        pos: Position,
-        min_bp: u8,
-        in_brackets: Option<Bracket>,
-    ) -> Path<NodeId<'src>> {
-        let mut jump = None;
-        Path {
-            content: self.pop_expr(
-                pos,
-                min_bp,
-                Flags {
-                    in_brackets,
-                    loc: Location::Path(Ref::new(&mut jump)),
-                },
-            ),
-            jump,
-        }
     }
 
     fn parse_path(
         &mut self,
         pos: Position,
         min_bp: u8,
-        in_brackets: Option<Bracket>,
+        in_brackets: Option<InBrackets>,
     ) -> Path<NodeId<'src>> {
         let mut jump = None;
         Path {
@@ -163,10 +139,30 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
         }
     }
 
-    fn handle_terminator<'caller>(
+    fn pop_path(
         &mut self,
         pos: Position,
-        own_span: Span,
+        min_bp: u8,
+        in_brackets: Option<InBrackets>,
+    ) -> Path<NodeId<'src>> {
+        let mut jump = None;
+        Path {
+            content: self.pop_expr(
+                pos,
+                min_bp,
+                Flags {
+                    in_brackets,
+                    loc: Location::Path(Ref::new(&mut jump)),
+                },
+            ),
+            jump,
+        }
+    }
+
+    fn handle_closed_bracket<'caller>(
+        &mut self,
+        pos: Position,
+        open_pos: Span,
         open_bracket: Bracket,
         flags: Flags<'src, 'caller>,
     ) -> Span {
@@ -193,7 +189,7 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
                     pos = tok.span.end + 1
                 }
 
-                if !self.tokenizer.next_is(|tok| tok.is_terminator()) {
+                if !self.tokenizer.next_is(|tok| matches!(tok.kind, Closed(..))) {
                     self.dash_slot = None;
                     let node = self.pop_expr(pos, u8::MAX, flags);
                     self.tree.move_to(node, dash_slot);
@@ -201,8 +197,24 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
             }
             span
         } else {
+            let mut left_over_tokens = self
+                .tokenizer
+                .consume_while(|tok| !matches!(tok.kind, TokenKind::Closed(..)));
+
+            if let Some(tok) = left_over_tokens.next() {
+                self.errors.push(
+                    tok.span.start
+                        - left_over_tokens
+                            .last()
+                            .map_or(tok.span.end, |last| last.span.end),
+                    ErrorCode::ExpectedClosedBracket {
+                        opened: open_bracket,
+                    },
+                )
+            }
+
             self.errors.push(
-                own_span,
+                pos.into(),
                 ErrorCode::NoClosedBracket {
                     opened: open_bracket,
                 },
@@ -241,23 +253,47 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
         flags: Flags<'src, 'caller>,
     ) -> NodeId<'src> {
         self.parse_expr(min_bp, flags).unwrap_or_else(|| {
-            dbg!(self.tokenizer.clone().collect::<Vec<_>>());
             self.errors.push(pos.into(), ErrorCode::ExpectedValue);
             self.tree.add(W::new(pos.into()))
         })
     }
+
+    fn parse_list<'caller>(&mut self, first: &mut NodeId<'src>, flags: Flags<'src, 'caller>) {
+        let Some(Token { span, .. }) = self.tokenizer.next_if(|tok| tok.kind == TokenKind::Comma)
+        else {
+            return;
+        };
+        let mut args = comp::Vec::new([*first, self.pop_expr(span.end + 1, 0, flags)]);
+
+        while let Some(Token { span, .. }) =
+            self.tokenizer.next_if(|tok| tok.kind == TokenKind::Comma)
+        {
+            args.push(self.pop_expr(span.end + 1, 0, flags))
+        }
+
+        *first = self.tree.add(
+            W::new(self.tree[*first].span() - self.tree[*args.last()].span())
+                .with_node(Node::List(args)),
+        );
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum InBrackets {
+    Container,
+    Application,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Flags<'src, 'caller> {
-    pub in_brackets: Option<Bracket>,
+    pub in_brackets: Option<InBrackets>,
     pub loc: Location<'src, 'caller>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Location<'src, 'caller> {
     Path(Ref<'caller, Option<Box<Jump<NodeId<'src>>>>>),
-    FuncArgType,
+    FuncArg,
 }
 
 impl<'src, 'caller> Flags<'src, 'caller> {
@@ -268,12 +304,9 @@ impl<'src, 'caller> Flags<'src, 'caller> {
             loc: Location::Path(jump),
         }
     }
-    fn in_brackets(mut self, bracket: Bracket) -> Self {
+    fn in_brackets(mut self, bracket: InBrackets) -> Self {
         self.in_brackets = Some(bracket);
         self
-    }
-    fn comma_override(self) -> bool {
-        matches!(self.in_brackets, Some(Bracket::Round | Bracket::Squared))
     }
     fn outside_of_brackets(mut self) -> Self {
         self.in_brackets = None;

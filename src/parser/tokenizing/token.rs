@@ -447,13 +447,13 @@ impl TokenKind {
             NotEqual => Some(Ne),
 
             Left => Some(Smaller),
-            LeftLeft => Some(BitShiftLeft),
+            LeftLeft => Some(Lsh),
             NotLeft => Some(GreaterEq),
             LeftEqual => Some(SmallerEq),
             NotLeftEqual => Some(Greater),
 
             Right => Some(Greater),
-            RightRight => Some(BitShiftRight),
+            RightRight => Some(Rsh),
             NotRight => Some(SmallerEq),
             RightEqual => Some(GreaterEq),
             NotRightEqual => Some(Smaller),

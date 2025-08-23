@@ -51,6 +51,7 @@ pub struct Error<'src> {
 pub enum ErrorCode<'src> {
     ExpectedValue,
     ExpectedIdent,
+    ExpectedFunctionName,
     IdentWithJustDot,
 
     NoClosingQuotes { quote: &'src str },
@@ -62,6 +63,7 @@ pub enum ErrorCode<'src> {
 
     // bracket errors
     NoOpenedBracket { closed: Bracket },
+    ExpectedClosedBracket { opened: Bracket },
     NoClosedBracket { opened: Bracket },
     WrongClosedBracket { expected: Bracket, found: Bracket },
 }
@@ -195,10 +197,14 @@ impl Error<'_> {
         use ErrorCode::*;
         (match &self.error {
             ExpectedValue => format_error!(self.section.to_string(path), "expected a value"),
-            ExpectedIdent {} => format_error!(
+            ExpectedIdent => format_error!(
                 self.section.to_string(path),
                 "expected an identifier",
                 "you have to always put a value behind a tick"
+            ),
+            ExpectedFunctionName => format_error!(
+                self.section.to_string(path),
+                "expected the name of the function"
             ),
             IdentWithJustDot => format_error!(
                 self.section.to_string(path),
@@ -219,9 +225,9 @@ impl Error<'_> {
             }
             JumpInsideFuncArg { keyword } => format_error!(
                 self.section.to_string(path),
-                "there was a {} - jump inside of a function arguments type",
+                "there was a {} - jump inside of a function arguments",
                 [keyword],
-                "you have to remove the jump, because there is no location to jump to"
+                "you have to remove the jump, because jumps arent allowed in function arguments"
             ),
             CodeAfterJump => {
                 format_error!(
@@ -235,6 +241,13 @@ impl Error<'_> {
                     self.section.to_string(path),
                     "there was a closed bracket {} but no opened one",
                     [closed.display_closed()]
+                )
+            }
+            ExpectedClosedBracket { opened } => {
+                format_error!(
+                    self.section.to_string(path),
+                    "expected a closed bracket {}",
+                    [opened.display_closed()]
                 )
             }
             NoClosedBracket { opened } => {

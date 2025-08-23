@@ -10,35 +10,29 @@ use crate::{
 use Bracket::*;
 use TokenKind::*;
 
-pub(super) const STATEMENT: u8 = 3;
-pub(super) const COLON: u8 = 5;
-pub(super) const BINDING: u8 = 7;
+pub(super) const STATEMENT: u8 = 1;
+pub(super) const COLON: u8 = 3;
+pub(super) const BINDING: u8 = 5;
 pub(super) const SINGLE_VALUE: u8 = 124;
 
-pub(super) const fn comma(in_brackets: bool) -> u8 {
-    match in_brackets {
-        true => 1,
-        false => 16,
-    }
-}
-
 impl<'src> Token<'src> {
-    pub const fn binding_pow(self, comma_override: bool) -> u8 {
-        match self.kind {
-            Closed(..) | EqualPipe => 0,
+    pub const fn is_terminator(self) -> bool {
+        matches!(self.kind, Closed(..) | Comma)
+    }
 
-            Not | NotNot | Tick | RightArrow | Ident | Quote | Keyword(..) | Open(Curly) => 2,
+    pub const fn binding_pow(self) -> Option<u8> {
+        Some(match self.kind {
+            Closed(..) | Comma => return None,
 
-            Colon => 4,
+            Not | NotNot | Tick | RightArrow | Ident | Quote | Keyword(..) | Open(Curly) => 0,
 
-            Equal => 6,
+            Colon => 2,
+
+            Equal | EqualPipe => 4,
 
             ColonEqual | PipeEqual | NotPipeEqual | RightPipeEqual | NotRightPipeEqual
             | AndEqual | NotAndEqual | PlusEqual | DashEqual | StarEqual | SlashEqual
             | PercentEqual | DotEqual | CrossEqual | UpEqual | SwapSign | PlusPlus => 10,
-
-            Comma if comma_override => 0,
-            Comma => 15,
 
             PipePipe | NotPipePipe => 20,
             RightPipePipe | NotRightPipePipe => 30,
@@ -60,7 +54,7 @@ impl<'src> Token<'src> {
             Up => 121,
 
             Open(Squared | Round) => 130,
-        }
+        })
     }
 }
 
@@ -91,7 +85,7 @@ impl BinaryOp {
 
             Eq | Ne | Smaller | SmallerEq | Greater | GreaterEq => 51,
 
-            BitShiftLeft | BitShiftRight => 61,
+            Lsh | Rsh => 61,
 
             BitOr | BitNor => 71,
             BitXor | BitXnor => 81,
