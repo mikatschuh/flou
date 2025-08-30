@@ -1,5 +1,7 @@
+use bumpalo::Bump;
+
 use super::files::*;
-use crate::{error::CliError, format_time, parser::parse};
+use crate::{error::CliError, format_time, parser::parse, tree::TreeDisplay};
 use std::{
     ffi::OsString,
     fs::*,
@@ -93,11 +95,12 @@ impl Task {
                 file.read_to_string(&mut content)?;
 
                 let now = Instant::now();
-                let (tree, internalizer, errors) = parse(&content, path);
+                let arena = Bump::new();
+                let (root, internalizer, errors) = parse(&content, &arena, path);
                 println!(
                     "{}\n{}\n\nparsed in: {}",
                     *errors,
-                    tree.to_string(&internalizer),
+                    root.display(&internalizer, String::new()),
                     format_time(now.elapsed().as_nanos()),
                 );
             }

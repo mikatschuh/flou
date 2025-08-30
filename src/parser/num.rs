@@ -1,17 +1,20 @@
-use crate::parser::{
-    tokenizing::token::{Token, TokenKind},
-    Flags, Parser,
-};
 #[allow(unused)]
 use crate::{
     error::*,
     format_error_quote_arg,
     parser::binary_op::BinaryOp,
-    tree::{Node, NodeId, NodeWrapper, NodeWrapping, Note, Tree},
+    tree::{Node, NodeBox, NodeWrapper, Note},
     typing::{
         NumberKind::{self, *},
         NumberType, Type,
     },
+};
+use crate::{
+    parser::{
+        tokenizing::token::{Token, TokenKind},
+        Parser, StackData,
+    },
+    tree::Jump,
 };
 use num::BigUint;
 
@@ -26,7 +29,7 @@ pub enum Base {
 }
 use Base::*;
 
-impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
+impl<'src> Parser<'src> {
     /// Function to parse any literal into an AST-Node.
     /// Format:
     /// - whitespaces are only for formatting and precedence
@@ -46,34 +49,38 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
     /// ```
     /// If instead of a base specifier, a digit is given, its assumed that the leading zero
     /// was just a typo. The number will be continued regulary.
-    pub(super) fn convert_to_num_if_possible<'caller>(
+    pub(super) fn convert_to_num_if_possible<'caller, J: Jump<'src>>(
         &mut self,
         span: Span,
         ident: &'src str,
-        flags: Flags<'src, 'caller>,
-    ) -> NodeId<'src> {
+        flags: StackData<'src, 'caller, J>,
+    ) -> NodeBox<'src, J> {
         debug_assert_ne!(ident, "");
         debug_assert_ne!(ident, "..");
 
         self.try_to_make_number(span, ident, flags)
             .unwrap_or_else(|e| match e {
-                Some(suffix) => self.tree.add(
-                    W::new(span)
-                        .with_node(Node::Ident(self.internalizer.get(ident)))
-                        .with_note(suffix.into()),
-                ),
-                None => self
-                    .tree
-                    .add(W::new(span).with_node(Node::Ident(self.internalizer.get(ident)))),
+                Some(suffix) => {
+                    let sym = self.internalizer.get(ident);
+                    self.make_node(
+                        NodeWrapper::new(span)
+                            .with_node(Node::Ident(sym))
+                            .with_note(suffix.into()),
+                    )
+                }
+                None => {
+                    let sym = self.internalizer.get(ident);
+                    self.make_node(NodeWrapper::new(span).with_node(Node::Ident(sym)))
+                }
             })
     }
 
-    fn try_to_make_number<'caller>(
+    fn try_to_make_number<'caller, J: Jump<'src>>(
         &mut self,
         span: Span,
         ident: &'src str,
-        flags: Flags<'src, 'caller>,
-    ) -> Result<NodeId<'src>, Option<&'src str>> {
+        flags: StackData<'src, 'caller, J>,
+    ) -> Result<NodeBox<'src, J>, Option<&'src str>> {
         let divisor_equation = |base, digits_after_dot| -> BigUint {
             (base as u32).pow(digits_after_dot as u32).into()
         };
@@ -123,16 +130,14 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
 
         let base_node = match divisor {
             Some(divisor) => {
-                let left = self
-                    .tree
-                    .add(W::new(span).with_node(Node::Literal { val: number }));
+                let left =
+                    self.make_node(NodeWrapper::new(span).with_node(Node::Literal { val: number }));
 
                 let right = self
-                    .tree
-                    .add(W::new(span).with_node(Node::Literal { val: divisor }));
+                    .make_node(NodeWrapper::new(span).with_node(Node::Literal { val: divisor }));
 
-                self.tree.add(
-                    W::new(span)
+                self.make_node(
+                    NodeWrapper::new(span)
                         .with_node(Node::Binary {
                             op: BinaryOp::Div,
                             lhs: left,
@@ -141,23 +146,23 @@ impl<'src, W: NodeWrapping<'src> + 'src> Parser<'src, W> {
                         .with_type(num_type.into()),
                 )
             }
-            None => self.tree.add(
-                W::new(span)
+            None => self.make_node(
+                NodeWrapper::new(span)
                     .with_node(Node::Literal { val: number })
                     .with_type(num_type.into()),
             ),
         };
         Ok(match exp {
             Some(exp) => {
-                let base = self.tree.add(W::new(span).with_node(Node::Literal {
+                let base = self.make_node(NodeWrapper::new(span).with_node(Node::Literal {
                     val: (base as u8).into(),
                 }));
-                let right = self.tree.add(W::new(span).with_node(Node::Binary {
+                let right = self.make_node(NodeWrapper::new(span).with_node(Node::Binary {
                     op: BinaryOp::Pow,
                     lhs: base,
                     rhs: exp,
                 }));
-                self.tree.add(W::new(span).with_node(Node::Binary {
+                self.make_node(NodeWrapper::new(span).with_node(Node::Binary {
                     op: BinaryOp::Mul,
                     lhs: base_node,
                     rhs: right,

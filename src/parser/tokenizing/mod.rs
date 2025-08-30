@@ -41,7 +41,7 @@ enum State {
     Nothing,
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EscapeSequenceConfusion {
     pos: Span,
     sequence: String,

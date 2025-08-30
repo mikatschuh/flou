@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use crate::{
     parser::{intern::Internalizer, num},
-    tree::{NodeId, NodeWrapping, Tree},
+    tree::{Jump, NodeBox, TreeDisplay},
 };
 
 pub type OptSize = Option<usize>;
@@ -42,35 +42,30 @@ impl Display for NumberType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Type<'tree> {
+#[derive(Debug, PartialEq, Eq)]
+pub enum Type<'tree, J: Jump<'tree>> {
     Number(NumberType),
-    Expr(NodeId<'tree>),
+    Expr(NodeBox<'tree, J>),
 }
 use Type::*;
 
-impl<'tree> From<NumberType> for Type<'tree> {
+impl<'tree, J: Jump<'tree>> From<NumberType> for Type<'tree, J> {
     fn from(value: NumberType) -> Self {
         Number(value)
     }
 }
 
-impl<'tree> From<NodeId<'tree>> for Type<'tree> {
-    fn from(value: NodeId<'tree>) -> Self {
+impl<'tree, J: Jump<'tree>> From<NodeBox<'tree, J>> for Type<'tree, J> {
+    fn from(value: NodeBox<'tree, J>) -> Self {
         Expr(value)
     }
 }
 
-impl<'tree> Type<'tree> {
-    pub fn display<W: NodeWrapping<'tree>>(
-        &self,
-        tree: &Tree<'tree, W>,
-        internalizer: &Internalizer<'tree>,
-        indentation: String,
-    ) -> String {
+impl<'tree, J: Jump<'tree>> Type<'tree, J> {
+    pub fn display(&self, internalizer: &Internalizer<'tree>, indentation: String) -> String {
         match self {
             Number(num) => format!("{num}"),
-            Expr(node) => tree[*node].display(tree, internalizer, indentation),
+            Expr(node) => node.display(internalizer, indentation),
         }
     }
 }

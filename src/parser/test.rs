@@ -4,7 +4,7 @@ use crate::{
     parser::{
         binary_op::BinaryOp, intern::Internalizer, tokenizing::Tokenizer, unary_op::UnaryOp, Parser,
     },
-    tree::{HeapNode, NodeWrapper},
+    tree::NodeWrapper,
     utilities::Rc,
 };
 use std::path::Path;
@@ -72,7 +72,7 @@ fn test() {
 
     macro_rules! parse {
         ($text:expr) => {{
-            let tree = Parser::<NodeWrapper>::new(
+            let tree = Parser::new(
                 Tokenizer::new($text, errors.clone()),
                 internalizer.clone(),
                 errors.clone(),
@@ -124,7 +124,7 @@ fn test_number_parsing() {
 
     macro_rules! parse {
         ($text:expr) => {{
-            let tree = Parser::<NodeWrapper>::new(
+            let tree = Parser::new(
                 Tokenizer::new($text, errors.clone()),
                 internalizer.clone(),
                 errors.clone(),

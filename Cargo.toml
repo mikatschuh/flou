@@ -10,6 +10,8 @@ num_cpus = "1.15"
 crossbeam = "0.8.4"
 num = "*"
 arrayvec = "*"
+bumpalo = { version = "*", features = ["boxed"] }
+
 # Enable a small amount of optimization in the dev profile.
 [profile.dev]
 opt-level = 1

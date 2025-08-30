@@ -5,7 +5,6 @@ pub enum Keyword {
     Else,
     Continue,
     Break,
-    Exit,
     Return,
 }
 
@@ -18,7 +17,6 @@ impl Keyword {
             Else => "else",
             Continue => "continue",
             Break => "break",
-            Exit => "exit",
             Return => "return",
         }
     }
@@ -34,8 +32,7 @@ impl Keyword {
             "continue" => Some(Continue),
             "nächste" => Some(Continue),
             "break" => Some(Break),
-            "exit" => Some(Exit),
-            "verlasse" => Some(Exit),
+            "verlasse" => Some(Break),
             "return" => Some(Return),
             "zurückgeben" => Some(Return),
             _ => None,

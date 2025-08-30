@@ -313,12 +313,14 @@ pub struct Ref<'recv, T> {
 impl<'recv, T> Clone for Ref<'recv, T> {
     fn clone(&self) -> Self {
         Self {
-            _marker: PhantomData,
+            _marker: PhantomData::default(),
             ptr: self.ptr,
         }
     }
 }
+
 impl<'recv, T> Copy for Ref<'recv, T> {}
+
 impl<'recv, T: Debug> Debug for Ref<'recv, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         unsafe { write!(f, "{:?}", *self.ptr.as_ptr()) }

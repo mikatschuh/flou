@@ -1,1 +1,27 @@
-()
+add(a u32, b u32): u32 = proc "rust-abi" {
+    return a + b
+}
+
+add(a u32, b u32): ()
+
+add = (a u32, b u32) => {
+    return a + b
+}
+
+v = (x, y)
+(x, y) = v
+
+
+
+main(): () = proc {
+    takes_func(
+        func proc(a u32, b u32): u32
+    )
+
+    add = add(a u32, b u32): u32
+
+    takes_func(add)
+}
+
+a = 10
+a = "string"
