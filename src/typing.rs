@@ -92,6 +92,62 @@ impl TypeParser {
         if input.is_empty() {
             return None;
         }
+
+        match input {
+            b"unt" => {
+                return Some(NumberType {
+                    kind: Unsigned,
+                    size: None,
+                })
+            }
+            b"int" => {
+                return Some(NumberType {
+                    kind: Signed,
+                    size: None,
+                })
+            }
+            b"float" => {
+                return Some(NumberType {
+                    kind: Float,
+                    size: None,
+                })
+            }
+            _ => {}
+        }
+
+        let kind = match input[0] {
+            b'u' => Unsigned,
+            b'i' => Signed,
+            b'f' => Float,
+            _ => return None,
+        };
+        input = &input[1..];
+        if input.is_empty() {
+            return None;
+        };
+        Some(NumberType {
+            kind,
+            size: match input {
+                b"x" => Some(self.target_ptr_size),
+                _ => Some({
+                    let mut parsed_size =
+                        num::parse_number(&mut input).1?.to_u64_digits().into_iter();
+                    if !input.is_empty() {
+                        return None;
+                    }
+                    let size = parsed_size.next()?;
+                    if !parsed_size.all(|digit| digit == 0) {
+                        return None;
+                    }
+                    size as usize
+                }),
+            },
+        })
+    }
+    pub fn parse_type_suffix(&self, mut input: &[u8]) -> Option<NumberType> {
+        if input.is_empty() {
+            return None;
+        }
         let kind = match input[0] {
             b'u' => Unsigned,
             b'i' => Signed,

@@ -102,7 +102,7 @@ impl<'src> Parser<'src> {
         };
         let num_type = self
             .type_parser
-            .parse_number_type(ident)
+            .parse_type_suffix(ident)
             .unwrap_or(NumberType {
                 kind: Arbitrary,
                 size: None,
