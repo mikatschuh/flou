@@ -3,8 +3,7 @@ use crate::{
     parser::{binary_op::BinaryOp, keyword::Keyword, tree::Bracket, unary_op::UnaryOp},
 };
 use colored::{ColoredString, Colorize};
-use num::Integer;
-use std::{fmt::Display, num::NonZeroU64};
+use std::fmt::Display;
 
 #[derive(PartialEq, Debug, Clone, Copy, Eq)]
 pub struct Token<'src> {
@@ -15,10 +14,10 @@ pub struct Token<'src> {
 
 #[derive(PartialEq, Debug, Clone, Copy, Eq)]
 pub enum TokenKind {
-    Not,    // !
-    NotNot, // !!
-    Tick,   // '
-    Equal,  // =
+    Not, // !
+
+    Tick,  // '
+    Equal, // =
 
     EqualEqual, // ==
     NotEqual,   // !=
@@ -36,11 +35,12 @@ pub enum TokenKind {
     NotRightEqual, // !>=
     RightArrow,    // ->
 
-    Plus,             // +
-    PlusPlus,         // ++
-    PlusEqual,        // +=
-    Dash(NonZeroU64), // (-)+
-    DashEqual,        // -=
+    Plus,      // +
+    PlusPlus,  // ++
+    PlusEqual, // +=
+    Dash,      // -
+    DashDash,  // --
+    DashEqual, // -=
 
     Star,         // *
     StarEqual,    // *=
@@ -101,7 +101,6 @@ impl Display for Token<'_> {
             "{}",
             match self.kind {
                 Not => "!",
-                NotNot => "!!",
                 Tick => "'",
                 Equal => "=",
 
@@ -124,8 +123,8 @@ impl Display for Token<'_> {
                 Plus => "+",
                 PlusPlus => "++",
                 PlusEqual => "+=",
-                Dash(count) =>
-                    return write!(f, "{}", (0..count.get()).map(|_| " ").collect::<String>()),
+                Dash => "-",
+                DashDash => "--",
                 DashEqual => "-=",
 
                 Star => "*",
@@ -194,16 +193,13 @@ impl<'a> Token<'a> {
 }
 
 impl TokenKind {
-    pub const DASH_DASH: Self = Self::Dash(unsafe { NonZeroU64::new_unchecked(2) });
-    pub const DASH: Self = Self::Dash(unsafe { NonZeroU64::new_unchecked(1) });
-
     pub fn new(c: char) -> Option<TokenKind> {
         match c {
             '!' => Some(Not),
             '\'' => Some(Tick),
             '=' => Some(Equal),
             '+' => Some(Plus),
-            '-' => Some(Self::DASH),
+            '-' => Some(Dash),
             '*' => Some(Star),
             '/' => Some(Slash),
             '%' => Some(Percent),
@@ -228,21 +224,11 @@ impl TokenKind {
         // transformation table to make tokens out of their char components
         match self {
             Not => match c {
-                '!' => Some(NotNot),
                 '=' => Some(NotEqual),
                 '|' => Some(NotPipe),
                 '&' => Some(NotAnd),
                 '<' => Some(NotLeft),
                 '>' => Some(NotRight),
-                _ => None,
-            },
-            NotNot => match c {
-                '!' => Some(Not),
-                '=' => Some(EqualEqual),
-                '|' => Some(Pipe),
-                '&' => Some(And),
-                '<' => Some(Left),
-                '>' => Some(Right),
                 _ => None,
             },
             Equal => match c {
@@ -296,10 +282,9 @@ impl TokenKind {
                 '=' => Some(PlusEqual),
                 _ => None,
             },
-            Dash(count) => match c {
-                '-' => Some(Dash(count.checked_add(1)?)),
-                '=' if count.get().is_odd() => Some(DashEqual),
-                '=' => Some(PlusEqual),
+            Dash => match c {
+                '-' => Some(DashDash),
+                '=' => Some(DashEqual),
                 '>' => Some(RightArrow),
                 _ => None,
             },
@@ -370,7 +355,7 @@ impl TokenKind {
     }
     pub fn ends_with(self, c: char) -> bool {
         match c {
-            '!' => matches!(self, Not | NotNot),
+            '!' => matches!(self, Not),
             '\'' => matches!(self, Tick),
             '=' => matches!(
                 self,
@@ -400,7 +385,7 @@ impl TokenKind {
             ),
             '>' => matches!(self, RightArrow | Right | RightRight | NotRight),
             '+' => matches!(self, Plus | PlusPlus),
-            '-' => matches!(self, Dash(..)),
+            '-' => matches!(self, Dash | DashDash),
             '*' => self == Star,
             '/' => self == Slash,
             '%' => self == Percent,
@@ -434,6 +419,7 @@ impl TokenKind {
     pub fn as_prefix(self) -> Option<UnaryOp> {
         use UnaryOp::*;
         match self {
+            Self::Dash => Some(Neg),
             Self::Not => Some(Not),
             _ => None,
         }
@@ -459,6 +445,7 @@ impl TokenKind {
 
             Plus => Some(Add),
             PlusEqual => Some(AddAssign),
+            Dash => Some(Sub),
             DashEqual => Some(SubAssign),
 
             Star => Some(Mul),
@@ -507,6 +494,7 @@ impl TokenKind {
         use UnaryOp::*;
         match self {
             PlusPlus => Some(Inc),
+            DashDash => Some(Dec),
             Self::Not => Some(Fac),
             _ => None,
         }

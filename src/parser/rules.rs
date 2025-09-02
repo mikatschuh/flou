@@ -1,7 +1,3 @@
-use std::num::NonZeroU64;
-
-use num::Integer;
-
 use crate::{
     comp,
     error::ErrorCode,
@@ -159,25 +155,6 @@ impl<'src> Token<'src> {
                     .push(self.span, ErrorCode::NoOpenedBracket { closed: bracket });
                 return None;
             }
-            Dash(count) => {
-                /*if state
-                    .tokenizer
-                    .next_is(|tok| matches!(tok.kind, Closed(..)))
-                {
-                    let lhs = state.make_node(NodeWrapper::new(self.span));
-                    state.dash_slot = Some(lhs);
-                    lhs
-                } else*/
-                if count.get().is_odd() {
-                    let op = UnaryOp::Neg;
-                    let operand = state.pop_expr(op.binding_pow(), self.span.end);
-                    state.make_node(
-                        NodeWrapper::new(self.span).with_node(Node::Unary { op, val: operand }),
-                    )
-                } else {
-                    state.pop_expr(UnaryOp::Neg.binding_pow(), self.span.end)
-                }
-            }
             RightArrow => {
                 let val = state.pop_expr(min_bp, self.span.end);
                 state.make_node(NodeWrapper::new(self.span).with_node(Node::Ref {
@@ -185,7 +162,7 @@ impl<'src> Token<'src> {
                     val,
                 }))
             }
-            Plus | PlusPlus | NotNot => state.pop_expr(UnaryOp::Neg.binding_pow(), self.span.end),
+            Plus | PlusPlus | DashDash => state.pop_expr(UnaryOp::Neg.binding_pow(), self.span.end),
             kind => match kind.as_prefix() {
                 Some(op) => {
                     let val = state.pop_expr(op.binding_pow(), self.span.end);
@@ -252,55 +229,7 @@ impl<'src> Token<'src> {
                     self.span.end + 1,
                 )
             }
-            Dash(count) if count.get() > 1 => {
-                let end = if count.get() & 1 == 1 {
-                    state.tokenizer.buffer(Token {
-                        span: self.span,
-                        src: &self.src[self.src.len() - 1..],
-                        kind: Dash(NonZeroU64::new(1).unwrap()),
-                    }); // its ok to buffer now because we wont be reading the stream anymore
-                    self.span.end - 1
-                } else {
-                    self.span.end
-                };
-                let decs = count.get() >> 1; // fast div by two
-                if decs == 1 {
-                    state.make_node(NodeWrapper::new(lhs.span - end).with_node(Node::Unary {
-                        op: UnaryOp::Dec,
-                        val: lhs,
-                    }))
-                } else {
-                    let num = state.make_node(
-                        NodeWrapper::new(self.span.start + 2 - end)
-                            .with_node(Node::Literal { val: decs.into() }),
-                    );
-                    state.make_node(NodeWrapper::new(lhs.span - end).with_node(Node::Binary {
-                        op: BinaryOp::SubAssign,
-                        lhs,
-                        rhs: num,
-                    }))
-                }
-            }
-            Dash(..) => {
-                let op = BinaryOp::Sub;
-                let rhs = state.pop_expr(op.binding_pow(), self.span.end);
-                state.make_node(
-                    NodeWrapper::new(lhs.span - rhs.span).with_node(Node::Binary { op, lhs, rhs }),
-                )
-            }
-            NotNot => {
-                state.tokenizer.buffer(Token {
-                    span: self.span.start + 1 - self.span.end,
-                    src: &self.src[self.src.len() - 1..],
-                    kind: Not,
-                });
-                state.make_node(
-                    NodeWrapper::new(lhs.span - self.span).with_node(Node::Unary {
-                        op: UnaryOp::Fac,
-                        val: lhs,
-                    }),
-                )
-            }
+
             _ => {
                 if let Some(op) = self.kind.as_postfix() {
                     state.make_node(

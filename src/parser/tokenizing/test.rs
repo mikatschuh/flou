@@ -27,19 +27,6 @@ fn test() {
     );
     dbg!(1);
     assert_eq!(
-        Tokenizer::new("!!!!!=", errors.clone()).collect::<Vec<_>>(),
-        vec![Token::new(Span::at(1, 1, 10, 1), "! ! !! ! =", NotEqual)]
-    );
-    assert_eq!(
-        Tokenizer::new("!!!!!!>||, !!+", errors.clone()).collect::<Vec<_>>(),
-        vec![
-            Token::new(Span::at(1, 1, 13, 1), "! ! !! !! >||", RightPipePipe),
-            Token::new(Span::at(14, 1, 14, 1), ",", Comma),
-            Token::new(Span::at(16, 1, 17, 1), "!!", NotNot),
-            Token::new(Span::at(18, 1, 18, 1), "+", Plus),
-        ]
-    );
-    assert_eq!(
         Tokenizer::new("a + b //!\n c", errors.clone()).collect::<Vec<_>>(),
         vec![
             Token::new(Span::at(1, 1, 1, 1), "a", Ident),

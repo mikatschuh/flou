@@ -28,7 +28,7 @@ impl<'src> Token<'src> {
 
             ColonEqual | PipeEqual | NotPipeEqual | RightPipeEqual | NotRightPipeEqual
             | AndEqual | NotAndEqual | PlusEqual | DashEqual | StarEqual | SlashEqual
-            | PercentEqual | DotEqual | CrossEqual | UpEqual | SwapSign | PlusPlus => 10,
+            | PercentEqual | DotEqual | CrossEqual | UpEqual | SwapSign | PlusPlus | DashDash => 10,
 
             PipePipe | NotPipePipe => 20,
             RightPipePipe | NotRightPipePipe => 30,
@@ -43,11 +43,11 @@ impl<'src> Token<'src> {
             RightPipe | NotRightPipe => 80,
             And | NotAnd => 90,
 
-            Plus | Dash(..) => 100,
+            Plus | Dash => 100,
 
             Star | Slash | Percent | Dot | Cross => 110,
 
-            Not | NotNot => 115,
+            Not => 115,
 
             Up => 121,
 
