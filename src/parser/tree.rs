@@ -224,7 +224,7 @@ impl<'src> TreeDisplay<'src> for NodeWrapper<'src> {
             } => format!(
                 "{} {}\n{}=> {}{}",
                 "loop",
-                condition.display(internalizer, indentation.clone() + "   "),
+                condition.display(internalizer, indentation.clone() + "     "),
                 indentation.clone(),
                 then_body.display(internalizer, indentation.clone() + "   "),
                 else_body
@@ -270,8 +270,14 @@ impl<'src> TreeDisplay<'src> for NodeWrapper<'src> {
 #[derive(Debug, PartialEq, Eq)]
 pub enum Jump<'src> {
     Continue,
-    Break { val: Option<Box<NodeBox<'src>>> },
-    Return { val: Option<Box<NodeBox<'src>>> },
+    Break {
+        layers: usize,
+        val: Option<Box<NodeBox<'src>>>,
+    },
+    Return {
+        layers: usize,
+        val: Option<Box<NodeBox<'src>>>,
+    },
 }
 
 impl<'src> TreeDisplay<'src> for Jump<'src> {
@@ -279,15 +285,17 @@ impl<'src> TreeDisplay<'src> for Jump<'src> {
         use Jump::*;
         match self {
             Continue => format!("continue"),
-            Break { val } => format!(
-                "exit{}",
+            Break { layers, val } => format!(
+                "break * {}{}",
+                layers + 1,
                 val.as_ref().map_or_else(
                     || "".to_owned(),
                     |val| format!(" {}", val.display(internalizer, indentation))
                 )
             ),
-            Return { val } => format!(
-                "return{}",
+            Return { layers, val } => format!(
+                "return * {}{}",
+                layers + 1,
                 val.as_ref().map_or_else(
                     || "".to_owned(),
                     |val| format!(" {}", val.display(internalizer, indentation))

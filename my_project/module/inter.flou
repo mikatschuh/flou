@@ -1,0 +1,6 @@
+i = 10
+loop i > 0 {
+    print(i)
+    i--
+} break 10
+print(i)

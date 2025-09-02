@@ -9,7 +9,7 @@ use crate::{
             resolve_escape_sequences,
             token::{Token, TokenKind::*},
         },
-        tree::{Bracket, Jump, Node, NodeBox, Note, Path},
+        tree::{Bracket, Node, NodeBox, Note, Path},
         unary_op::UnaryOp,
         BindingPow, NodeWrapper, Parser,
     },
@@ -22,9 +22,10 @@ impl<'src> Token<'src> {
             Ident => {
                 if self.src == ".." {
                     state.make_node(NodeWrapper::new(self.span).with_node(Node::Placeholder))
-                } else if min_bp <= 1 && state.tokenizer.next_is(|tok| tok.binding_pow() == Some(0))
+                } else if min_bp <= binding_pow::STATEMENT
+                    && state.tokenizer.next_is(|tok| tok.binding_pow() == Some(0))
                 {
-                    let content = state.pop_expr(1, self.span.end);
+                    let content = state.pop_expr(binding_pow::LABEL, self.span.end);
                     let label = state.internalizer.get(self.src);
                     state.make_node(
                         NodeWrapper::new(self.span - content.span.end)
@@ -125,7 +126,7 @@ impl<'src> Token<'src> {
                                                 convention: Some(convention),
                                                 body: Path {
                                                     node: Some(body),
-                                                    jump: Some(Jump::Return { val: None }),
+                                                    jump: None,
                                                 },
                                             },
                                         ))

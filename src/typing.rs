@@ -93,28 +93,6 @@ impl TypeParser {
             return None;
         }
 
-        match input {
-            b"unt" => {
-                return Some(NumberType {
-                    kind: Unsigned,
-                    size: None,
-                })
-            }
-            b"int" => {
-                return Some(NumberType {
-                    kind: Signed,
-                    size: None,
-                })
-            }
-            b"float" => {
-                return Some(NumberType {
-                    kind: Float,
-                    size: None,
-                })
-            }
-            _ => {}
-        }
-
         let kind = match input[0] {
             b'u' => Unsigned,
             b'i' => Signed,

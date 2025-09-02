@@ -13,6 +13,8 @@ use TokenKind::*;
 pub(super) type BindingPow = usize;
 
 pub(super) const STATEMENT: BindingPow = 1;
+pub(super) const JUMP: BindingPow = 2;
+pub(super) const LABEL: BindingPow = 2;
 pub(super) const COLON: BindingPow = 4;
 pub(super) const BINDING: BindingPow = 3;
 pub(super) const SINGLE_VALUE: BindingPow = 124;

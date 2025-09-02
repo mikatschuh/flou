@@ -247,20 +247,29 @@ impl<'src> Parser<'src> {
                 self.tokenizer.next();
 
                 Some(Jump::Break {
-                    val: self.parse_expr(binding_pow::STATEMENT).map(Box::new),
+                    layers: self
+                        .tokenizer
+                        .consume_while(|tok| tok.kind == TokenKind::Keyword(Keyword::Break))
+                        .count(),
+                    val: self.parse_expr(binding_pow::JUMP).map(Box::new),
                 })
             }
             Keyword::Return => {
                 self.tokenizer.next();
 
                 Some(Jump::Return {
-                    val: self.parse_expr(binding_pow::STATEMENT).map(Box::new),
+                    layers: self
+                        .tokenizer
+                        .consume_while(|tok| tok.kind == TokenKind::Keyword(Keyword::Return))
+                        .count(),
+                    val: self.parse_expr(binding_pow::JUMP).map(Box::new),
                 })
             }
             _ => None,
         }
     }
 
+    #[inline]
     fn parse_return(&mut self) -> Option<Jump<'src>> {
         let Some(Token {
             kind: TokenKind::Keyword(keyword),
@@ -274,7 +283,11 @@ impl<'src> Parser<'src> {
                 self.tokenizer.next();
 
                 Some(Jump::Return {
-                    val: self.parse_expr(binding_pow::STATEMENT).map(Box::new),
+                    layers: self
+                        .tokenizer
+                        .consume_while(|tok| tok.kind == TokenKind::Keyword(Keyword::Return))
+                        .count(),
+                    val: self.parse_expr(binding_pow::JUMP).map(Box::new),
                 })
             }
             _ => None,
