@@ -1,7 +1,10 @@
 use crate::{
     comp,
     error::{ErrorCode, Errors, Position, Span},
-    parser::intern::{Internalizer, Symbol},
+    parser::{
+        intern::{Internalizer, Symbol},
+        keyword::Keyword,
+    },
     typing::TypeParser,
     utilities::Rc,
 };
@@ -80,12 +83,11 @@ impl<'src> Parser<'src> {
 
     #[inline]
     fn parse(mut self) -> NodeBox<'src> {
-        let root = self.parse_path(0).node;
-        self.expect_node(root, Position::beginning())
+        self.pop_expr(0, Position::beginning())
     }
 
-    fn parse_expr(&mut self, min_bp: u8, jump: &mut Option<Jump<'src>>) -> Option<NodeBox<'src>> {
-        let mut lhs = self.tokenizer.next()?.nud(self, min_bp, jump)?;
+    fn parse_expr(&mut self, min_bp: u8) -> Option<NodeBox<'src>> {
+        let mut lhs = self.tokenizer.next()?.nud(self, min_bp)?;
 
         while let Some(tok) = self.tokenizer.peek() {
             if self.brackets == 0 {
@@ -107,14 +109,14 @@ impl<'src> Parser<'src> {
                 .tokenizer
                 .next()
                 .expect("the token-stream was peeked before");
-            lhs = match tok.led(lhs, self, jump) {
+            lhs = match tok.led(lhs, self) {
                 Ok(new_lhs) => new_lhs,
                 Err(old_lhs) => {
                     self.tokenizer.buffer(tok);
 
-                    if let Some(rhs) = self.parse_expr(binding_pow::STATEMENT, jump) {
+                    if let Some(rhs) = self.parse_expr(binding_pow::STATEMENT) {
                         let mut chain = comp::Vec::new([old_lhs, rhs]);
-                        while let Some(rhs) = self.parse_expr(binding_pow::STATEMENT, jump) {
+                        while let Some(rhs) = self.parse_expr(binding_pow::STATEMENT) {
                             chain.push(rhs)
                         }
                         self.make_node(
@@ -132,31 +134,20 @@ impl<'src> Parser<'src> {
     }
 
     #[inline]
-    fn pop_expr(
-        &mut self,
-        min_bp: u8,
-        jump: &mut Option<Jump<'src>>,
-        pos: Position,
-    ) -> NodeBox<'src> {
-        let node = self.parse_expr(min_bp, jump);
+    fn pop_expr(&mut self, min_bp: u8, pos: Position) -> NodeBox<'src> {
+        let node = self.parse_expr(min_bp);
         self.expect_node(node, pos)
     }
 
     #[inline]
-    fn parse_path(&mut self, min_bp: u8) -> Path<'src> {
-        let mut jump: Option<Jump> = None;
-        let node = self.parse_expr(min_bp, &mut jump);
-        Path { node, jump }
-    }
-
-    #[inline]
     fn pop_path(&mut self, min_bp: u8, pos: Position) -> Path<'src> {
-        let mut jump: Option<Jump> = None;
-        let node = self.pop_expr(min_bp, &mut jump, pos);
-        Path {
-            node: Some(node),
-            jump,
+        let node = self.parse_expr(min_bp);
+        let jump = self.parse_jump();
+        let path = Path { node, jump };
+        if path.is_none() {
+            self.errors.push(pos.into(), ErrorCode::ExpectedValue);
         }
+        path
     }
 
     fn handle_closed_bracket(&mut self, pos: Position, open_bracket: Bracket) -> Span {
@@ -224,30 +215,52 @@ impl<'src> Parser<'src> {
         }
     }
 
-    fn clean_up_after_jump(&mut self) {
-        if let Some(Token { span, .. }) = self.tokenizer.next_if(|tok| !tok.binding_pow().is_none())
-        {
-            self.errors.push(span, ErrorCode::CodeAfterJump);
-        }
-        self.tokenizer
-            .consume_while(|tok| !tok.binding_pow().is_none());
-    }
-
     /// Pops an identifier if the next token is one. If not it generates the correct error message
     /// and leaves the token there. The position indicates were the identifier is expected to go.
-    fn pop_identifier(&mut self, pos: Position) -> (Span, Symbol<'src>) {
-        if let Some(tok) = self
+    fn next_identifier(&mut self, pos: Position) -> (Span, Symbol<'src>) {
+        let Some(tok) = self
             .tokenizer
             .next_if(|tok| matches!(tok.kind, TokenKind::Ident))
-        {
-            (tok.span, self.internalizer.get(tok.src))
-        } else {
+        else {
             self.errors.push(pos.into(), ErrorCode::ExpectedIdent);
-            (pos.into(), self.internalizer.empty())
+            return (pos.into(), self.internalizer.empty());
+        };
+        (tok.span, self.internalizer.get(tok.src))
+    }
+
+    fn parse_jump(&mut self) -> Option<Jump<'src>> {
+        let Some(Token {
+            kind: TokenKind::Keyword(keyword),
+            ..
+        }) = self.tokenizer.peek()
+        else {
+            return None;
+        };
+        match keyword {
+            Keyword::Continue => {
+                self.tokenizer.next();
+
+                Some(Jump::Continue)
+            }
+            Keyword::Break => {
+                self.tokenizer.next();
+
+                Some(Jump::Break {
+                    val: self.parse_expr(binding_pow::STATEMENT).map(Box::new),
+                })
+            }
+            Keyword::Return => {
+                self.tokenizer.next();
+
+                Some(Jump::Return {
+                    val: self.parse_expr(binding_pow::STATEMENT).map(Box::new),
+                })
+            }
+            _ => None,
         }
     }
 
-    fn parse_list(&mut self, lhs: NodeBox<'src>, jump: &mut Option<Jump<'src>>) -> NodeBox<'src> {
+    fn parse_list(&mut self, lhs: NodeBox<'src>) -> NodeBox<'src> {
         let Some(Token { span, .. }) = self.tokenizer.next_if(|tok| tok.kind == TokenKind::Comma)
         else {
             return lhs;
@@ -258,7 +271,6 @@ impl<'src> Parser<'src> {
             0,
             |exprs| Node::List(exprs),
             span.end + 1,
-            jump,
         )
     }
 
@@ -269,13 +281,12 @@ impl<'src> Parser<'src> {
         right_bp: u8,
         nud: impl Fn(comp::Vec<NodeBox<'src>, 2>) -> Node<'src>,
         pos: Position,
-        jump: &mut Option<Jump<'src>>,
     ) -> NodeBox<'src> {
-        let rhs = self.pop_expr(right_bp, jump, pos);
+        let rhs = self.pop_expr(right_bp, pos);
         let mut exprs = comp::Vec::new([lhs, rhs]);
 
         while let Some(Token { span, .. }) = self.tokenizer.next_if(|tok| tok.kind == own_tok) {
-            let next = self.pop_expr(right_bp, jump, span.end + 1);
+            let next = self.pop_expr(right_bp, span.end + 1);
             exprs.push(next)
         }
 

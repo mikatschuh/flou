@@ -21,19 +21,14 @@ use crate::{
 };
 
 impl<'src> Token<'src> {
-    pub(super) fn nud(
-        self,
-        state: &mut Parser<'src>,
-        min_bp: u8,
-        jump: &mut Option<Jump<'src>>,
-    ) -> Option<NodeBox<'src>> {
+    pub(super) fn nud(self, state: &mut Parser<'src>, min_bp: u8) -> Option<NodeBox<'src>> {
         Some(match self.kind {
             Ident => {
                 if self.src == ".." {
                     state.make_node(NodeWrapper::new(self.span).with_node(Node::Placeholder))
                 } else if min_bp <= 1 && state.tokenizer.next_is(|tok| tok.binding_pow() == Some(0))
                 {
-                    let content = state.pop_expr(1, jump, self.span.end + 1);
+                    let content = state.pop_expr(1, self.span.end + 1);
                     let label = state.internalizer.get(self.src);
                     state.make_node(
                         NodeWrapper::new(self.span - content.span.end)
@@ -47,7 +42,7 @@ impl<'src> Token<'src> {
                             .with_node(Node::PrimitiveType(Type::Number(primitive_type))),
                     )
                 } else {
-                    match state.try_to_make_number(self.span, self.src, jump) {
+                    match state.try_to_make_number(self.span, self.src) {
                         Ok(node) => node,
 
                         Err(Some(suffix)) => {
@@ -84,8 +79,7 @@ impl<'src> Token<'src> {
                 use Keyword::*;
                 match keyword {
                     If | Loop => {
-                        let condition =
-                            state.pop_expr(binding_pow::STATEMENT, jump, self.span.end + 1);
+                        let condition = state.pop_expr(binding_pow::STATEMENT, self.span.end + 1);
 
                         let then_body = state.pop_path(4, condition.span.end + 1);
                         let else_body = if let Some(Token { span, .. }) =
@@ -111,44 +105,22 @@ impl<'src> Token<'src> {
                     }
                     Else => {
                         state.errors.push(self.span, ErrorCode::LonelyElse);
-                        state.parse_expr(min_bp, jump)?
+                        state.pop_expr(min_bp, self.span.end + 1); // consume else body - could lead to better error messages
+                        state.parse_expr(min_bp)?
                     }
-                    Continue => {
-                        *jump = Some(Jump::Continue);
-                        state.clean_up_after_jump();
-                        return None;
-                    }
-                    Break => {
-                        let val = state.parse_expr(binding_pow::STATEMENT, jump);
-                        if jump.is_some() {
-                            return None;
-                        }
-                        *jump = Some(Jump::Break {
-                            val: val.map(Box::new),
-                        });
-                        state.clean_up_after_jump();
-                        return None;
-                    }
-                    Return => {
-                        let val = state.parse_expr(binding_pow::STATEMENT, jump);
-                        if jump.is_some() {
-                            return None;
-                        }
-                        *jump = Some(Jump::Return {
-                            val: val.map(Box::new),
-                        });
-                        state.clean_up_after_jump();
+                    _ => {
+                        state.tokenizer.buffer(self);
                         return None;
                     }
                 }
             }
             Tick => {
-                let (ident_span, symbol) = state.pop_identifier(self.span.end + 1);
+                let (ident_span, symbol) = state.next_identifier(self.span.end + 1);
                 if let Some(tok) = state
                     .tokenizer
                     .next_if(|tok| matches!(tok.kind, RightArrow))
                 {
-                    let rhs = state.pop_expr(binding_pow::SINGLE_VALUE, jump, tok.span.end + 1);
+                    let rhs = state.pop_expr(binding_pow::SINGLE_VALUE, tok.span.end + 1);
                     state.make_node(
                         NodeWrapper::new(ident_span - rhs.span).with_node(Node::Ref {
                             lifetime: Some(symbol),
@@ -164,14 +136,14 @@ impl<'src> Token<'src> {
             }
             Open(own_bracket) => {
                 state.brackets += 1;
-                let Some(content) = state.parse_expr(0, jump) else {
+                let Some(content) = state.parse_expr(0) else {
                     let end = state.handle_closed_bracket(self.span.end + 1, own_bracket);
                     return Some(
                         state.make_node(NodeWrapper::new(self.span - end).with_node(Node::Unit)),
                     );
                 };
 
-                let mut content = state.parse_list(content, jump);
+                let mut content = state.parse_list(content);
 
                 let end = state.handle_closed_bracket(self.span.end + 1, own_bracket);
                 content.span = self.span - end;
@@ -198,27 +170,27 @@ impl<'src> Token<'src> {
                 } else*/
                 if count.get().is_odd() {
                     let op = UnaryOp::Neg;
-                    let operand = state.pop_expr(op.binding_pow(), jump, self.span.end + 1);
+                    let operand = state.pop_expr(op.binding_pow(), self.span.end + 1);
                     state.make_node(
                         NodeWrapper::new(self.span).with_node(Node::Unary { op, val: operand }),
                     )
                 } else {
-                    state.pop_expr(UnaryOp::Neg.binding_pow(), jump, self.span.end + 1)
+                    state.pop_expr(UnaryOp::Neg.binding_pow(), self.span.end + 1)
                 }
             }
             RightArrow => {
-                let val = state.pop_expr(min_bp, jump, self.span.end + 1);
+                let val = state.pop_expr(min_bp, self.span.end + 1);
                 state.make_node(NodeWrapper::new(self.span).with_node(Node::Ref {
                     lifetime: None,
                     val,
                 }))
             }
             Plus | PlusPlus | NotNot => {
-                state.pop_expr(UnaryOp::Neg.binding_pow(), jump, self.span.end + 1)
+                state.pop_expr(UnaryOp::Neg.binding_pow(), self.span.end + 1)
             }
             kind => match kind.as_prefix() {
                 Some(op) => {
-                    let val = state.pop_expr(op.binding_pow(), jump, self.span.end + 1);
+                    let val = state.pop_expr(op.binding_pow(), self.span.end + 1);
                     state.make_node(NodeWrapper::new(self.span).with_node(Node::Unary { op, val }))
                 }
                 _ => {
@@ -233,7 +205,6 @@ impl<'src> Token<'src> {
         mut self,
         lhs: NodeBox<'src>,
         state: &mut Parser<'src>,
-        jump: &mut Option<Jump<'src>>,
     ) -> Result<NodeBox<'src>, NodeBox<'src>> {
         Ok(match self.kind {
             Open(bracket) if matches!(bracket, Bracket::Round | Bracket::Squared) => {
@@ -243,11 +214,11 @@ impl<'src> Token<'src> {
                     Bracket::Squared => BinaryOp::Index,
                     _ => unreachable!(),
                 };
-                let content = state.parse_expr(0, jump).unwrap_or_else(|| {
+                let content = state.parse_expr(0).unwrap_or_else(|| {
                     state.make_node(NodeWrapper::new(self.span.end() + 1).with_node(Node::Unit))
                 });
 
-                let content = state.parse_list(content, jump);
+                let content = state.parse_list(content);
                 let end = state.handle_closed_bracket(self.span.end + 1, bracket);
                 state.make_node(NodeWrapper::new(self.span - end).with_node(Node::Binary {
                     op,
@@ -261,10 +232,9 @@ impl<'src> Token<'src> {
                 binding_pow::BINDING,
                 |exprs| Node::Binding { exprs },
                 self.span.end + 1,
-                jump,
             ),
             Colon => {
-                let rhs = state.pop_expr(binding_pow::COLON, jump, self.span.end + 1);
+                let rhs = state.pop_expr(binding_pow::COLON, self.span.end + 1);
                 state.make_node(
                     NodeWrapper::new(lhs.span - rhs.span).with_node(Node::Contract { lhs, rhs }),
                 )
@@ -282,7 +252,6 @@ impl<'src> Token<'src> {
                     binding_pow::BINDING,
                     |exprs| Node::Binding { exprs },
                     self.span.end + 1,
-                    jump,
                 )
             }
             Dash(count) if count.get() > 1 => {
@@ -299,7 +268,7 @@ impl<'src> Token<'src> {
             }
             Dash(..) => {
                 let op = BinaryOp::Sub;
-                let rhs = state.pop_expr(op.binding_pow(), jump, self.span.end + 1);
+                let rhs = state.pop_expr(op.binding_pow(), self.span.end + 1);
                 state.make_node(
                     NodeWrapper::new(lhs.span - rhs.span).with_node(Node::Binary { op, lhs, rhs }),
                 )
@@ -311,7 +280,7 @@ impl<'src> Token<'src> {
                             .with_node(Node::Unary { op, val: lhs }),
                     )
                 } else if let Some(op) = self.kind.as_infix() {
-                    let rhs = state.pop_expr(op.binding_pow(), jump, self.span.end + 1);
+                    let rhs = state.pop_expr(op.binding_pow(), self.span.end + 1);
                     if op.is_chained() {
                         let mut chain = comp::Vec::new([(op, rhs)]);
                         while let Some(op) =
@@ -319,7 +288,7 @@ impl<'src> Token<'src> {
                         {
                             if op.is_chained() {
                                 let Token { span, .. } = state.tokenizer.next().unwrap();
-                                let rhs = state.pop_expr(op.binding_pow(), jump, span.end + 1);
+                                let rhs = state.pop_expr(op.binding_pow(), span.end + 1);
                                 chain.push((op, rhs));
                                 continue;
                             }

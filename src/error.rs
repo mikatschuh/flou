@@ -51,14 +51,10 @@ pub struct Error<'src> {
 pub enum ErrorCode<'src> {
     ExpectedValue,
     ExpectedIdent,
-    ExpectedFunctionName,
 
     NoClosingQuotes { quote: &'src str },
     // control structure mistakes
     LonelyElse,
-
-    JumpInsideFuncArg { keyword: &'src str },
-    CodeAfterJump,
 
     // bracket errors
     NoOpenedBracket { closed: Bracket },
@@ -192,11 +188,6 @@ impl Error<'_> {
                 "expected an identifier",
                 "you have to always put a value behind a tick"
             ),
-            ExpectedFunctionName => format_error!(
-                self.section.to_string(path),
-                "expected the name of the function"
-            ),
-
             NoClosingQuotes { quote } => format_error!(
                 self.section.to_string(path),
                 "the ending quotes of the quote {} were missing",
@@ -207,19 +198,6 @@ impl Error<'_> {
                     self.section.to_string(path),
                     "the else - keyword has been used without an if / loop - block infront of it",
                     "you've to add the if / loop block"
-                )
-            }
-            JumpInsideFuncArg { keyword } => format_error!(
-                self.section.to_string(path),
-                "there was a {} - jump inside of a function arguments",
-                [keyword],
-                "you have to remove the jump, because jumps arent allowed in function arguments"
-            ),
-            CodeAfterJump => {
-                format_error!(
-                    self.section.to_string(path),
-                    "there was code after a jump",
-                    "a jump cannot be followed by code"
                 )
             }
             NoOpenedBracket { closed } => {

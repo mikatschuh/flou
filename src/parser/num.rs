@@ -1,6 +1,5 @@
 use crate::parser::{
     tokenizing::token::{Token, TokenKind},
-    tree::Jump,
     Parser,
 };
 #[allow(unused)]
@@ -53,7 +52,6 @@ impl<'src> Parser<'src> {
         &mut self,
         span: Span,
         ident: &'src str,
-        jump: &mut Option<Jump<'src>>,
     ) -> Result<NodeBox<'src>, Option<&'src str>> {
         let divisor_equation = |base, digits_after_dot| -> BigUint {
             (base as u32).pow(digits_after_dot as u32).into()
@@ -94,7 +92,7 @@ impl<'src> Parser<'src> {
                 });
                 num = &[]
             }
-            if let Some(exp) = self.parse_expr(BinaryOp::Pow.binding_pow(), jump) {
+            if let Some(exp) = self.parse_expr(BinaryOp::Pow.binding_pow()) {
                 Some(exp)
             } else {
                 return Err(Some(unsafe { str::from_utf8_unchecked(suffix) }));
