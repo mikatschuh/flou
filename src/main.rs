@@ -5,12 +5,14 @@ use std::time::Instant;
 use error::CliError;
 use threader::Threadpool;
 
+#[allow(dead_code)]
 #[macro_use]
 mod error;
 // mod number;
 mod parser;
 mod threader;
 mod typing;
+#[allow(dead_code)]
 #[macro_use]
 mod utilities;
 #[macro_use]
@@ -128,28 +130,7 @@ fn _print_communism() {
         "opensource".red().bold()
     );
 }
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct Formatter {
-    pub enabled: bool,
-}
-use std::fmt::Display;
-impl Formatter {
-    fn input<T: Display>(&self, input: &T) {
-        if self.enabled {
-            println!("==>  {}", input.to_string().bold())
-        }
-    }
-    fn state<T: Display>(&self, text: &T) {
-        if self.enabled {
-            println!("\n{text}\n")
-        }
-    }
-    fn log(&self, text: &str) {
-        if self.enabled {
-            println!("{}", ("#".to_owned() + " " + text).bold())
-        }
-    }
-}
+
 static ABOUT: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
     format!("\n{}\n| {}\n|  {}\t{}\n",
     "The Thyn programming language.\n•--------------------------------------------------------------------------------".bold(),

@@ -1,5 +1,6 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Keyword {
+    Proc,
     Loop,
     If,
     Else,
@@ -12,6 +13,7 @@ impl Keyword {
     pub fn display(&self) -> &'static str {
         use Keyword::*;
         match self {
+            Proc => "proc",
             Loop => "loop",
             If => "if",
             Else => "else",
@@ -22,20 +24,22 @@ impl Keyword {
     }
     pub fn from_str(string: &str) -> Option<Self> {
         use Keyword::*;
-        match string {
-            "loop" => Some(Loop),
-            "wiederhole" => Some(Loop),
-            "if" => Some(If),
-            "wenn" => Some(If),
-            "else" => Some(Else),
-            "sonst" => Some(Else),
-            "continue" => Some(Continue),
-            "nächste" => Some(Continue),
-            "break" => Some(Break),
-            "verlasse" => Some(Break),
-            "return" => Some(Return),
-            "zurückgeben" => Some(Return),
-            _ => None,
-        }
+        Some(match string {
+            "proc" => Proc,
+            "prozedur" => Proc,
+            "loop" => Loop,
+            "wiederhole" => Loop,
+            "if" => If,
+            "wenn" => If,
+            "else" => Else,
+            "sonst" => Else,
+            "continue" => Continue,
+            "nächste" => Continue,
+            "break" => Break,
+            "verlasse" => Break,
+            "return" => Return,
+            "zurückgeben" => Return,
+            _ => return None,
+        })
     }
 }

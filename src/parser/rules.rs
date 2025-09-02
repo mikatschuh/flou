@@ -9,15 +9,15 @@ use crate::{
             resolve_escape_sequences,
             token::{Token, TokenKind::*},
         },
-        tree::{Bracket, Node, NodeBox, Note},
+        tree::{Bracket, Jump, Node, NodeBox, Note, Path},
         unary_op::UnaryOp,
-        NodeWrapper, Parser,
+        BindingPow, NodeWrapper, Parser,
     },
     typing::Type,
 };
 
 impl<'src> Token<'src> {
-    pub(super) fn nud(self, state: &mut Parser<'src>, min_bp: u8) -> Option<NodeBox<'src>> {
+    pub(super) fn nud(self, state: &mut Parser<'src>, min_bp: BindingPow) -> Option<NodeBox<'src>> {
         Some(match self.kind {
             Ident => {
                 if self.src == ".." {
@@ -99,6 +99,59 @@ impl<'src> Token<'src> {
                             }
                         }))
                     }
+                    Proc => match state.parse_return() {
+                        None => {
+                            let convention_or_body = state.pop_expr(1, self.span.end);
+                            match state.parse_return() {
+                                None => {
+                                    let convention = convention_or_body;
+                                    let body = state.pop_expr(1, self.span.end);
+                                    if let Some(jump) = state.parse_return() {
+                                        state.make_node(NodeWrapper::new(self.span).with_node(
+                                            Node::Proc {
+                                                convention: Some(convention),
+                                                body: Path {
+                                                    node: Some(body),
+                                                    jump: Some(jump),
+                                                },
+                                            },
+                                        ))
+                                    } else {
+                                        state
+                                            .errors
+                                            .push(body.span.end(), ErrorCode::ExpectedReturn);
+                                        state.make_node(NodeWrapper::new(self.span).with_node(
+                                            Node::Proc {
+                                                convention: Some(convention),
+                                                body: Path {
+                                                    node: Some(body),
+                                                    jump: Some(Jump::Return { val: None }),
+                                                },
+                                            },
+                                        ))
+                                    }
+                                }
+                                Some(jump) => state.make_node(
+                                    NodeWrapper::new(self.span).with_node(Node::Proc {
+                                        convention: None,
+                                        body: Path {
+                                            node: Some(convention_or_body),
+                                            jump: Some(jump),
+                                        },
+                                    }),
+                                ),
+                            }
+                        }
+                        Some(jump) => {
+                            state.make_node(NodeWrapper::new(self.span).with_node(Node::Proc {
+                                convention: None,
+                                body: Path {
+                                    node: None,
+                                    jump: Some(jump),
+                                },
+                            }))
+                        }
+                    },
                     Else => {
                         state.errors.push(self.span, ErrorCode::LonelyElse);
                         state.pop_expr(min_bp, self.span.end); // consume else body - could lead to better error messages
@@ -163,7 +216,7 @@ impl<'src> Token<'src> {
                 }))
             }
             Plus | PlusPlus | DashDash => state.pop_expr(UnaryOp::Neg.binding_pow(), self.span.end),
-            kind => match kind.as_prefix() {
+            _ => match self.as_prefix() {
                 Some(op) => {
                     let val = state.pop_expr(op.binding_pow(), self.span.end);
                     state.make_node(NodeWrapper::new(self.span).with_node(Node::Unary { op, val }))
@@ -231,18 +284,16 @@ impl<'src> Token<'src> {
             }
 
             _ => {
-                if let Some(op) = self.kind.as_postfix() {
+                if let Some(op) = self.as_postfix() {
                     state.make_node(
                         NodeWrapper::new(lhs.span - self.span)
                             .with_node(Node::Unary { op, val: lhs }),
                     )
-                } else if let Some(op) = self.kind.as_infix() {
+                } else if let Some(op) = self.as_infix() {
                     let rhs = state.pop_expr(op.binding_pow(), self.span.end);
                     if op.is_chained() {
                         let mut chain = comp::Vec::new([(op, rhs)]);
-                        while let Some(op) =
-                            state.tokenizer.peek().and_then(|op| op.kind.as_infix())
-                        {
+                        while let Some(op) = state.tokenizer.peek().and_then(|op| op.as_infix()) {
                             if op.is_chained() {
                                 let Token { span, .. } = state.tokenizer.next().unwrap();
                                 let rhs = state.pop_expr(op.binding_pow(), span.end);

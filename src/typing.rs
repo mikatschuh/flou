@@ -89,7 +89,10 @@ impl TypeParser {
         }
     }
     pub fn parse_number_type(&self, mut input: &[u8]) -> Option<NumberType> {
-        let kind = match input.get(0)? {
+        if input.is_empty() {
+            return None;
+        }
+        let kind = match input[0] {
             b'u' => Unsigned,
             b'i' => Signed,
             b'f' => Float,
@@ -104,12 +107,16 @@ impl TypeParser {
             size: match input {
                 b"x" => Some(self.target_ptr_size),
                 _ => Some({
-                    let parsed_size = num::parse_number(&mut input).1?.to_u64_digits();
-                    let size = parsed_size.first()?;
-                    if parsed_size.first().is_some() {
+                    let mut parsed_size =
+                        num::parse_number(&mut input).1?.to_u64_digits().into_iter();
+                    if !input.is_empty() {
                         return None;
                     }
-                    *size as usize
+                    let size = parsed_size.next()?;
+                    if !parsed_size.all(|digit| digit == 0) {
+                        return None;
+                    }
+                    size as usize
                 }),
             },
         })

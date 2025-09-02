@@ -55,6 +55,7 @@ pub enum ErrorCode<'src> {
     NoClosingQuotes { quote: &'src str },
     // control structure mistakes
     LonelyElse,
+    ExpectedReturn,
 
     // bracket errors
     NoOpenedBracket { closed: Bracket },
@@ -200,6 +201,11 @@ impl Error<'_> {
                     "you've to add the if / loop block"
                 )
             }
+            ExpectedReturn => format_error!(
+                self.section.to_string(path),
+                "expected return",
+                "you've to add the return keyword"
+            ),
             NoOpenedBracket { closed } => {
                 format_error!(
                     self.section.to_string(path),
@@ -373,16 +379,6 @@ impl Span {
     #[inline]
     pub fn end_mut(&mut self) -> &mut Position {
         &mut self.end
-    }
-    #[inline]
-    pub fn start(mut self) -> Self {
-        self.end.line = self.start.line;
-        self.end.collum = self.start.collum;
-        self
-    }
-    #[inline]
-    pub fn start_mut(&mut self) -> &mut Position {
-        &mut self.start
     }
 }
 impl Add<usize> for Span {

@@ -111,11 +111,11 @@ impl<'src> TreeDisplay<'src> for NodeWrapper<'src> {
             Placeholder => "..".to_owned(),
             Quote(quote) => format!("Quote  \"{}\"", with_written_out_escape_sequences(quote)),
             Label { label, content } => format!(
-                "Label  {}, {}",
+                "Label  {} - {}",
                 internalizer.resolve(*label),
                 content.display(internalizer, indentation)
             ),
-            PrimitiveType(ty) => format!("{}", ty.display(internalizer, indentation)),
+            PrimitiveType(ty) => format!("Type  {}", ty.display(internalizer, indentation)),
             Unit => "()".to_owned(),
             Binary { op, lhs, rhs } => format!(
                 "{op} {{\n{}{}\n{}{} \n{}}}",
@@ -204,7 +204,7 @@ impl<'src> TreeDisplay<'src> for NodeWrapper<'src> {
                 additions
                     .iter()
                     .map(|item| {
-                        let op = item.0.as_str();
+                        let op = item.0.to_string();
                         format!(
                             "\n{}{}{}{}",
                             next_indentation.clone(),
@@ -253,6 +253,16 @@ impl<'src> TreeDisplay<'src> for NodeWrapper<'src> {
                         &else_body.display(internalizer, indentation + "     "),
                     ))
             ),
+            Proc { convention, body } => {
+                format!(
+                    "proc {}{}",
+                    convention.as_ref().map_or_else(
+                        || "".to_owned(),
+                        |conv| format!("{} ", conv.display(internalizer, indentation.clone()))
+                    ),
+                    body.display(internalizer, indentation)
+                )
+            }
         }
     }
 }
@@ -363,6 +373,11 @@ pub enum Node<'src> {
         then_body: Path<'src>,
         else_body: Option<Path<'src>>,
     }, // loop condition then_body (else else_body)
+
+    Proc {
+        convention: Option<NodeBox<'src>>,
+        body: Path<'src>,
+    },
 
     Binding {
         exprs: comp::Vec<NodeBox<'src>, 2>,

@@ -10,25 +10,28 @@ use Bracket::*;
 use Keyword::*;
 use TokenKind::*;
 
-pub(super) const STATEMENT: u8 = 1;
-pub(super) const COLON: u8 = 4;
-pub(super) const BINDING: u8 = 3;
-pub(super) const SINGLE_VALUE: u8 = 124;
+pub(super) type BindingPow = usize;
+
+pub(super) const STATEMENT: BindingPow = 1;
+pub(super) const COLON: BindingPow = 4;
+pub(super) const BINDING: BindingPow = 3;
+pub(super) const SINGLE_VALUE: BindingPow = 124;
 
 impl<'src> Token<'src> {
-    pub const fn binding_pow(self) -> Option<u8> {
+    pub const fn binding_pow(self) -> Option<BindingPow> {
         Some(match self.kind {
             Closed(..) | Comma | Keyword(Else | Continue | Break | Return) => return None,
 
-            Tick | RightArrow | Ident | Quote | Keyword(If | Loop) | Open(Curly) => 0,
+            Tick | RightArrow | Ident | Quote | Keyword(If | Loop | Proc) | Open(Curly) => 0,
 
             Equal | EqualPipe => 2,
 
             Colon => 5,
 
-            ColonEqual | PipeEqual | NotPipeEqual | RightPipeEqual | NotRightPipeEqual
-            | AndEqual | NotAndEqual | PlusEqual | DashEqual | StarEqual | SlashEqual
-            | PercentEqual | DotEqual | CrossEqual | UpEqual | SwapSign | PlusPlus | DashDash => 10,
+            ColonEqual | LeftLeftEqual | RightRightEqual | PipeEqual | NotPipeEqual
+            | RightPipeEqual | NotRightPipeEqual | AndEqual | NotAndEqual | PlusEqual
+            | DashEqual | StarEqual | SlashEqual | PercentEqual | DotEqual | CrossEqual
+            | UpEqual | SwapSign | PlusPlus | DashDash => 10,
 
             PipePipe | NotPipePipe => 20,
             RightPipePipe | NotRightPipePipe => 30,
@@ -49,15 +52,15 @@ impl<'src> Token<'src> {
 
             Not => 115,
 
-            Up => 121,
+            Up => 121 + ((self.src.len() - 1) << 1),
 
-            Open(Squared | Round) => 130,
+            Open(Squared | Round) => usize::MAX,
         })
     }
 }
 
 impl UnaryOp {
-    pub const fn binding_pow(self) -> u8 {
+    pub const fn binding_pow(self) -> BindingPow {
         use UnaryOp::*;
         match self {
             Inc | Dec => 0,
@@ -70,14 +73,29 @@ impl UnaryOp {
 }
 
 impl BinaryOp {
-    pub const fn binding_pow(self) -> u8 {
+    pub const fn binding_pow(self) -> BindingPow {
         use BinaryOp::*;
         match self {
             Index | App => 0,
 
-            Write | OrAssign | NorAssign | XorAssign | XnorAssign | AndAssign | NandAssign
-            | AddAssign | SubAssign | MulAssign | DivAssign | ModAssign | DotAssign
-            | CrossAssign | PowAssign | Swap => 11,
+            Write
+            | LshAssign
+            | RshAssign
+            | OrAssign
+            | NorAssign
+            | XorAssign
+            | XnorAssign
+            | AndAssign
+            | NandAssign
+            | AddAssign
+            | SubAssign
+            | MulAssign
+            | DivAssign
+            | ModAssign
+            | DotAssign
+            | CrossAssign
+            | PowAssign { .. }
+            | Swap => 11,
 
             Or | Nor => 21,
             Xor | Xnor => 31,
@@ -95,7 +113,7 @@ impl BinaryOp {
 
             Mul | Div | Mod | Dot | Cross => 111,
 
-            Pow => 120,
+            Pow { grade } => 120 + (grade << 1),
         }
     }
 }

@@ -57,16 +57,16 @@ impl<'src> Parser<'src> {
             (base as u32).pow(digits_after_dot as u32).into()
         };
 
-        let mut num = ident.as_bytes();
-        if num[0] == b'_' || num[num.len() - 1] == b'_' {
+        let mut ident = ident.as_bytes();
+        if ident[0] == b'_' || ident[ident.len() - 1] == b'_' {
             return Err(None);
         }
 
-        let (base, mut number) = parse_number(&mut num);
+        let (base, mut number) = parse_number(&mut ident);
 
-        let divisor = if !num.is_empty() && num[0] == b'.' {
-            num = &num[1..];
-            match parse_digits(&mut number, base as u8, &mut num) {
+        let divisor = if !ident.is_empty() && ident[0] == b'.' {
+            ident = &ident[1..];
+            match parse_digits(&mut number, base as u8, &mut ident) {
                 0 => None,
                 num_digits => {
                     let divisor = divisor_equation(base, num_digits);
@@ -81,18 +81,18 @@ impl<'src> Parser<'src> {
             return Err(None);
         };
 
-        let exp = if !num.is_empty() && (num[0] == b'e' || num[0] == b'p') {
-            let suffix = num;
-            num = &num[1..];
-            if !num.is_empty() {
+        let exp = if !ident.is_empty() && (ident[0] == b'e' || ident[0] == b'p') {
+            let suffix = ident;
+            ident = &ident[1..];
+            if !ident.is_empty() {
                 self.tokenizer.buffer(Token {
                     span,
-                    src: unsafe { str::from_utf8_unchecked(num) },
+                    src: unsafe { str::from_utf8_unchecked(ident) },
                     kind: TokenKind::Ident,
                 });
-                num = &[]
+                ident = &[]
             }
-            if let Some(exp) = self.parse_expr(BinaryOp::Pow.binding_pow()) {
+            if let Some(exp) = self.parse_expr(BinaryOp::Pow { grade: 0 }.binding_pow()) {
                 Some(exp)
             } else {
                 return Err(Some(unsafe { str::from_utf8_unchecked(suffix) }));
@@ -100,9 +100,13 @@ impl<'src> Parser<'src> {
         } else {
             None
         };
-        let Some(num_type) = self.type_parser.parse_number_type(num) else {
-            return Err(Some(unsafe { str::from_utf8_unchecked(num) }));
-        };
+        let num_type = self
+            .type_parser
+            .parse_number_type(ident)
+            .unwrap_or(NumberType {
+                kind: Arbitrary,
+                size: None,
+            });
 
         let base_node = match divisor {
             Some(divisor) => {
@@ -134,7 +138,7 @@ impl<'src> Parser<'src> {
                     val: (base as u8).into(),
                 }));
                 let right = self.make_node(NodeWrapper::new(span).with_node(Node::Binary {
-                    op: BinaryOp::Pow,
+                    op: BinaryOp::Pow { grade: 0 },
                     lhs: base,
                     rhs: exp,
                 }));

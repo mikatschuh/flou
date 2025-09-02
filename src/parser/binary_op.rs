@@ -2,6 +2,9 @@
 pub enum BinaryOp {
     Write, // a := b
 
+    LshAssign, // a <<= b
+    RshAssign, // a >>= b
+
     OrAssign,   // a |= b
     NorAssign,  // a !|= b
     XorAssign,  // a >|= b
@@ -18,7 +21,8 @@ pub enum BinaryOp {
 
     DotAssign,   // a ·= b
     CrossAssign, // a ><= b
-    PowAssign,   // a ^= b
+
+    PowAssign { grade: usize }, // a ^= b
 
     Swap, // a =|= b
 
@@ -55,83 +59,91 @@ pub enum BinaryOp {
 
     Dot,   // a · b
     Cross, // a >< b
-    Pow,   // a ^ b
+
+    Pow { grade: usize }, // a (^)+ b
 
     Index, // a[b]
     App,   // a(b)
 }
-use std::fmt;
-impl fmt::Display for BinaryOp {
+use std::fmt::{self, Display};
+
+use BinaryOp::*;
+impl Display for BinaryOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.as_str())
+        write!(
+            f,
+            "{}",
+            match self {
+                Write => ":=",
+
+                LshAssign => "<<=",
+                RshAssign => ">>=",
+
+                OrAssign => "|=",
+                NorAssign => "!|=",
+                XorAssign => ">|=",
+                XnorAssign => "!>|=",
+                AndAssign => "&=",
+                NandAssign => "!&=",
+
+                AddAssign => "+=",
+                SubAssign => "-=",
+
+                MulAssign => "*=",
+                DivAssign => "/=",
+                ModAssign => "%=",
+
+                DotAssign => "·=",
+                CrossAssign => "><=",
+                PowAssign { grade } =>
+                    return write!(f, "^{}", (0..*grade).map(|_| "^").collect::<String>()),
+
+                Swap => "=|=",
+
+                Or => "||",
+                Nor => "!||",
+                Xor => ">||",
+                Xnor => "!>||",
+                And => "&&",
+                Nand => "!&&",
+
+                Eq => "==",
+                Ne => "!=",
+                Smaller => "<",
+                GreaterEq => ">=",
+                Greater => ">",
+                SmallerEq => "<=",
+
+                Lsh => "<<",
+                Rsh => ">>",
+
+                BitOr => "|",
+                BitNor => "!|",
+                BitXor => ">|",
+                BitXnor => "!>|",
+                BitAnd => "&",
+                BitNand => "!&",
+
+                Add => "+",
+                Sub => "-",
+
+                Mul => "*",
+                Div => "/",
+                Mod => "%",
+
+                Dot => "·",
+                Cross => "><",
+                Pow { grade } =>
+                    return write!(f, "^{}", (0..*grade).map(|_| "^").collect::<String>()),
+
+                Index => "-[-",
+                App => "-(-",
+            }
+        )
     }
 }
-use BinaryOp::*;
+
 impl BinaryOp {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Write => ":=",
-
-            OrAssign => "|=",
-            NorAssign => "!|=",
-            XorAssign => ">|=",
-            XnorAssign => "!>|=",
-            AndAssign => "&=",
-            NandAssign => "!&=",
-
-            AddAssign => "+=",
-            SubAssign => "-=",
-
-            MulAssign => "*=",
-            DivAssign => "/=",
-            ModAssign => "%=",
-
-            DotAssign => "·=",
-            CrossAssign => "><=",
-            PowAssign => "^=",
-
-            Swap => "=|=",
-
-            Or => "||",
-            Nor => "!||",
-            Xor => ">||",
-            Xnor => "!>||",
-            And => "&&",
-            Nand => "!&&",
-
-            Eq => "==",
-            Ne => "!=",
-            Smaller => "<",
-            GreaterEq => ">=",
-            Greater => ">",
-            SmallerEq => "<=",
-
-            Lsh => "<<",
-            Rsh => ">>",
-
-            BitOr => "|",
-            BitNor => "!|",
-            BitXor => ">|",
-            BitXnor => "!>|",
-            BitAnd => "&",
-            BitNand => "!&",
-
-            Add => "+",
-            Sub => "-",
-
-            Mul => "*",
-            Div => "/",
-            Mod => "%",
-
-            Dot => "·",
-            Cross => "><",
-            Pow => "^",
-
-            Index => "-[-",
-            App => "-(-",
-        }
-    }
-
     pub const fn is_chained(self) -> bool {
         matches!(self, Eq | Ne | Smaller | SmallerEq | Greater | GreaterEq,)
     }

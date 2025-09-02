@@ -2,6 +2,7 @@ use crate::{
     comp,
     error::{ErrorCode, Errors, Position, Span},
     parser::{
+        binding_pow::BindingPow,
         intern::{Internalizer, Symbol},
         keyword::Keyword,
     },
@@ -86,7 +87,7 @@ impl<'src> Parser<'src> {
         self.pop_expr(0, Position::beginning())
     }
 
-    fn parse_expr(&mut self, min_bp: u8) -> Option<NodeBox<'src>> {
+    fn parse_expr(&mut self, min_bp: BindingPow) -> Option<NodeBox<'src>> {
         let mut lhs = self.tokenizer.next()?.nud(self, min_bp)?;
 
         while let Some(tok) = self.tokenizer.peek() {
@@ -134,13 +135,13 @@ impl<'src> Parser<'src> {
     }
 
     #[inline]
-    fn pop_expr(&mut self, min_bp: u8, pos: Position) -> NodeBox<'src> {
+    fn pop_expr(&mut self, min_bp: BindingPow, pos: Position) -> NodeBox<'src> {
         let node = self.parse_expr(min_bp);
         self.expect_node(node, pos)
     }
 
     #[inline]
-    fn pop_path(&mut self, min_bp: u8, pos: Position) -> Path<'src> {
+    fn pop_path(&mut self, min_bp: BindingPow, pos: Position) -> Path<'src> {
         let node = self.parse_expr(min_bp);
         let jump = self.parse_jump();
         let path = Path { node, jump };
@@ -260,6 +261,26 @@ impl<'src> Parser<'src> {
         }
     }
 
+    fn parse_return(&mut self) -> Option<Jump<'src>> {
+        let Some(Token {
+            kind: TokenKind::Keyword(keyword),
+            ..
+        }) = self.tokenizer.peek()
+        else {
+            return None;
+        };
+        match keyword {
+            Keyword::Return => {
+                self.tokenizer.next();
+
+                Some(Jump::Return {
+                    val: self.parse_expr(binding_pow::STATEMENT).map(Box::new),
+                })
+            }
+            _ => None,
+        }
+    }
+
     fn parse_list(&mut self, lhs: NodeBox<'src>) -> NodeBox<'src> {
         let Some(Token { span, .. }) = self.tokenizer.next_if(|tok| tok.kind == TokenKind::Comma)
         else {
@@ -278,7 +299,7 @@ impl<'src> Parser<'src> {
         &mut self,
         lhs: NodeBox<'src>,
         own_tok: TokenKind,
-        right_bp: u8,
+        right_bp: BindingPow,
         nud: impl Fn(comp::Vec<NodeBox<'src>, 2>) -> Node<'src>,
         pos: Position,
     ) -> NodeBox<'src> {

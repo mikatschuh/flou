@@ -22,18 +22,20 @@ pub enum TokenKind {
     EqualEqual, // ==
     NotEqual,   // !=
 
-    Left,         // <
-    LeftLeft,     // <<
-    NotLeft,      // !<
-    LeftEqual,    // <=
-    NotLeftEqual, // !<=
+    Left,          // <
+    LeftLeft,      // <<
+    LeftLeftEqual, // <<=
+    NotLeft,       // !<
+    LeftEqual,     // <=
+    NotLeftEqual,  // !<=
 
-    Right,         // >
-    RightRight,    // >>
-    NotRight,      // !>
-    RightEqual,    // >=
-    NotRightEqual, // !>=
-    RightArrow,    // ->
+    Right,           // >
+    RightRight,      // >>
+    RightRightEqual, // >>=
+    NotRight,        // !>
+    RightEqual,      // >=
+    NotRightEqual,   // !>=
+    RightArrow,      // ->
 
     Plus,      // +
     PlusPlus,  // ++
@@ -53,8 +55,8 @@ pub enum TokenKind {
     DotEqual,   // a ·= b
     Cross,      // a >< b
     CrossEqual, // a ><= b
-    Up,         // a ^ b
-    UpEqual,    // a ^= b
+    Up,         // a (^)+ b
+    UpEqual,    // a (^)+= b
 
     Pipe,         // |
     PipePipe,     // ||
@@ -96,88 +98,7 @@ use TokenKind::*;
 
 impl Display for Token<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self.kind {
-                Not => "!",
-                Tick => "'",
-                Equal => "=",
-
-                EqualEqual => "==",
-                NotEqual => "!=",
-
-                Left => "<",
-                LeftLeft => "<<",
-                NotLeft => "!<",
-                LeftEqual => "<=",
-                NotLeftEqual => "!<=",
-
-                Right => ">",
-                RightRight => ">>",
-                NotRight => "!>",
-                RightEqual => ">=",
-                NotRightEqual => "!>=",
-                RightArrow => "->",
-
-                Plus => "+",
-                PlusPlus => "++",
-                PlusEqual => "+=",
-                Dash => "-",
-                DashDash => "--",
-                DashEqual => "-=",
-
-                Star => "*",
-                StarEqual => "*=",
-                Slash => "/",
-                SlashEqual => "/=",
-                Percent => "%",
-                PercentEqual => "%=",
-
-                Dot => "·",
-                DotEqual => "·=",
-                Cross => "><",
-                CrossEqual => "><=",
-                Up => "^",
-                UpEqual => "^=",
-
-                Pipe => "|",
-                PipePipe => "||",
-                NotPipe => "!|",
-                NotPipePipe => "!||",
-                PipeEqual => "|=",
-                NotPipeEqual => "!|=",
-
-                RightPipe => ">|",
-                RightPipePipe => ">||",
-                NotRightPipe => "!>|",
-                NotRightPipePipe => "!>||",
-                RightPipeEqual => ">|=",
-                NotRightPipeEqual => "!>|=",
-
-                And => "&",
-                AndAnd => "&&",
-                NotAnd => "!&",
-                NotAndAnd => "!&&",
-                AndEqual => "&=",
-                NotAndEqual => "!&=",
-
-                Colon => ":",
-                ColonEqual => ":=",
-                EqualPipe => "=|",
-                SwapSign => "=|=",
-
-                Comma => ",",
-
-                Ident => self.src,
-                Quote => self.src,
-                Keyword(keyword) => keyword.display(),
-
-                Open(bracket) => bracket.display_open(),
-
-                Closed(bracket) => bracket.display_closed(),
-            }
-        )
+        write!(f, "{}", self.src)
     }
 }
 
@@ -194,164 +115,106 @@ impl<'a> Token<'a> {
 
 impl TokenKind {
     pub fn new(c: char) -> Option<TokenKind> {
-        match c {
-            '!' => Some(Not),
-            '\'' => Some(Tick),
-            '=' => Some(Equal),
-            '+' => Some(Plus),
-            '-' => Some(Dash),
-            '*' => Some(Star),
-            '/' => Some(Slash),
-            '%' => Some(Percent),
-            '·' => Some(Dot),
-            '^' => Some(Up),
-            '|' => Some(Pipe),
-            '&' => Some(And),
-            '<' => Some(Left),
-            '>' => Some(Right),
-            ':' => Some(Colon),
-            ',' => Some(Comma),
-            '(' => Some(Open(Round)),
-            '[' => Some(Open(Squared)),
-            '{' => Some(Open(Curly)),
-            ')' => Some(Closed(Round)),
-            ']' => Some(Closed(Squared)),
-            '}' => Some(Closed(Curly)),
-            _ => None,
-        }
+        Some(match c {
+            '!' => Not,
+            '\'' => Tick,
+            '=' => Equal,
+            '+' => Plus,
+            '-' => Dash,
+            '*' => Star,
+            '/' => Slash,
+            '%' => Percent,
+            '·' => Dot,
+            '^' => Up,
+            '|' => Pipe,
+            '&' => And,
+            '<' => Left,
+            '>' => Right,
+            ':' => Colon,
+            ',' => Comma,
+            '(' => Open(Round),
+            '[' => Open(Squared),
+            '{' => Open(Curly),
+            ')' => Closed(Round),
+            ']' => Closed(Squared),
+            '}' => Closed(Curly),
+            _ => return None,
+        })
     }
     pub fn add(self, c: char) -> Option<TokenKind> {
         // transformation table to make tokens out of their char components
-        match self {
-            Not => match c {
-                '=' => Some(NotEqual),
-                '|' => Some(NotPipe),
-                '&' => Some(NotAnd),
-                '<' => Some(NotLeft),
-                '>' => Some(NotRight),
-                _ => None,
-            },
-            Equal => match c {
-                '|' => Some(EqualPipe),
-                '=' => Some(EqualEqual),
-                _ => None,
-            },
-            EqualEqual => match c {
-                '=' => Some(EqualEqual),
-                _ => None,
-            },
-            Left => match c {
-                '<' => Some(LeftLeft),
-                '=' => Some(LeftEqual),
-                _ => None,
-            },
-            NotLeft => match c {
-                '=' => Some(NotLeftEqual),
-                _ => None,
-            },
-            LeftEqual => match c {
-                '=' => Some(LeftEqual),
-                _ => None,
-            },
-            NotLeftEqual => match c {
-                '=' => Some(NotLeftEqual),
-                _ => None,
-            },
-            Right => match c {
-                '=' => Some(RightEqual),
-                '>' => Some(RightRight),
-                '|' => Some(RightPipe),
-                '<' => Some(Cross),
-                _ => None,
-            },
-            NotRight => match c {
-                '|' => Some(NotRightPipe),
-                '=' => Some(NotRightEqual),
-                _ => None,
-            },
-            RightEqual => match c {
-                '=' => Some(RightEqual),
-                _ => None,
-            },
-            NotRightEqual => match c {
-                '=' => Some(NotRightEqual),
-                _ => None,
-            },
-            Plus => match c {
-                '+' => Some(PlusPlus),
-                '=' => Some(PlusEqual),
-                _ => None,
-            },
-            Dash => match c {
-                '-' => Some(DashDash),
-                '=' => Some(DashEqual),
-                '>' => Some(RightArrow),
-                _ => None,
-            },
-            Star => match c {
-                '=' => Some(StarEqual),
-                _ => None,
-            },
-            Slash => match c {
-                '=' => Some(SlashEqual),
-                _ => None,
-            },
-            Percent => match c {
-                '=' => Some(PercentEqual),
-                _ => None,
-            },
-            Dot => match c {
-                '=' => Some(DotEqual),
-                _ => None,
-            },
-            Cross => match c {
-                '=' => Some(CrossEqual),
-                _ => None,
-            },
-            Up => match c {
-                '=' => Some(UpEqual),
-                _ => None,
-            },
-            Pipe => match c {
-                '|' => Some(PipePipe),
-                '=' => Some(PipeEqual),
-                _ => None,
-            },
-            NotPipe => match c {
-                '|' => Some(NotPipePipe),
-                '=' => Some(NotPipeEqual),
-                _ => None,
-            },
-            RightPipe => match c {
-                '|' => Some(RightPipePipe),
-                '=' => Some(RightPipeEqual),
-                _ => None,
-            },
-            NotRightPipe => match c {
-                '|' => Some(NotRightPipePipe),
-                '=' => Some(NotRightPipeEqual),
-                _ => None,
-            },
-            And => match c {
-                '&' => Some(AndAnd),
-                '=' => Some(AndEqual),
-                _ => None,
-            },
-            NotAnd => match c {
-                '&' => Some(NotAndAnd),
-                '=' => Some(NotAndEqual),
-                _ => None,
-            },
-            Colon => match c {
-                '=' => Some(ColonEqual),
-                _ => None,
-            },
-            EqualPipe => match c {
-                '=' => Some(SwapSign),
-                _ => None,
-            },
-            _ => None,
-        }
+        Some(match self {
+            Not if c == '=' => NotEqual,
+            NotEqual if c == '=' => NotEqual,
+
+            Not if c == '|' => NotPipe,
+            NotPipe if c == '|' => NotPipePipe,
+            NotPipe if c == '=' => NotPipeEqual,
+
+            Not if c == '&' => NotAnd,
+            NotAnd if c == '&' => NotAndAnd,
+            NotAnd if c == '=' => NotAndEqual,
+
+            Not if c == '<' => NotLeft,
+            NotLeft if c == '=' => NotLeftEqual,
+            NotLeftEqual if c == '=' => NotLeftEqual,
+
+            Not if c == '>' => NotRight,
+            NotRight if c == '|' => NotRightPipe,
+            NotRightPipe if c == '|' => NotRightPipePipe,
+            NotRightPipe if c == '=' => NotRightPipeEqual,
+            NotRight if c == '=' => NotRightEqual,
+            NotRightEqual if c == '=' => NotRightEqual,
+
+            Equal if c == '|' => EqualPipe,
+            EqualPipe if c == '=' => SwapSign,
+            Equal if c == '=' => EqualEqual,
+            EqualEqual if c == '=' => EqualEqual,
+
+            Left if c == '<' => LeftLeft,
+            LeftLeft if c == '=' => LeftLeftEqual,
+            Left if c == '=' => LeftEqual,
+            LeftEqual if c == '=' => LeftEqual,
+
+            Right if c == '>' => RightRight,
+            RightRight if c == '=' => RightRightEqual,
+            Right if c == '=' => RightEqual,
+            Right if c == '|' => RightPipe,
+            RightPipe if c == '|' => RightPipePipe,
+            RightPipe if c == '=' => RightPipeEqual,
+            Right if c == '<' => Cross,
+            RightEqual if c == '=' => RightEqual,
+
+            Plus if c == '+' => PlusPlus,
+            Plus if c == '=' => PlusEqual,
+
+            Dash if c == '-' => DashDash,
+            Dash if c == '=' => DashEqual,
+            Dash if c == '>' => RightArrow,
+
+            Star if c == '=' => StarEqual,
+
+            Slash if c == '=' => SlashEqual,
+
+            Percent if c == '=' => PercentEqual,
+
+            Dot if c == '=' => DotEqual,
+
+            Cross if c == '=' => CrossEqual,
+
+            Up if c == '^' => Up,
+            Up if c == '=' => UpEqual,
+
+            Pipe if c == '|' => PipePipe,
+            Pipe if c == '=' => PipeEqual,
+
+            And if c == '&' => AndAnd,
+            And if c == '=' => AndEqual,
+
+            Colon if c == '=' => ColonEqual,
+
+            _ => return None,
+        })
     }
     pub fn ends_with(self, c: char) -> bool {
         match c {
@@ -415,30 +278,33 @@ impl TokenKind {
             _ => false,
         }
     }
-
+}
+impl<'src> Token<'src> {
     pub fn as_prefix(self) -> Option<UnaryOp> {
         use UnaryOp::*;
-        match self {
-            Self::Dash => Some(Neg),
-            Self::Not => Some(Not),
+        match self.kind {
+            Dash => Some(Neg),
+            TokenKind::Not => Some(Not),
             _ => None,
         }
     }
 
     pub fn as_infix(self) -> Option<BinaryOp> {
         use BinaryOp::*;
-        match self {
+        match self.kind {
             EqualEqual => Some(Eq),
             NotEqual => Some(Ne),
 
             Left => Some(Smaller),
             LeftLeft => Some(Lsh),
+            LeftLeftEqual => Some(LshAssign),
             NotLeft => Some(GreaterEq),
             LeftEqual => Some(SmallerEq),
             NotLeftEqual => Some(Greater),
 
             Right => Some(Greater),
             RightRight => Some(Rsh),
+            RightRightEqual => Some(RshAssign),
             NotRight => Some(SmallerEq),
             RightEqual => Some(GreaterEq),
             NotRightEqual => Some(Smaller),
@@ -455,12 +321,16 @@ impl TokenKind {
             Percent => Some(Mod),
             PercentEqual => Some(ModAssign),
 
-            Self::Dot => Some(Dot),
+            TokenKind::Dot => Some(Dot),
             DotEqual => Some(DotAssign),
-            Self::Cross => Some(Cross),
+            TokenKind::Cross => Some(Cross),
             CrossEqual => Some(CrossAssign),
-            Up => Some(Pow),
-            UpEqual => Some(PowAssign),
+            Up => Some(Pow {
+                grade: self.src.len() - 1,
+            }),
+            UpEqual => Some(PowAssign {
+                grade: self.src.len() - 2,
+            }), // -2 to account for the equal sign
 
             Pipe => Some(BitOr),
             PipePipe => Some(Or),
@@ -476,7 +346,7 @@ impl TokenKind {
             RightPipeEqual => Some(XorAssign),
             NotRightPipeEqual => Some(XnorAssign),
 
-            Self::And => Some(BitAnd),
+            TokenKind::And => Some(BitAnd),
             AndAnd => Some(And),
             NotAnd => Some(BitNand),
             NotAndAnd => Some(Nand),
@@ -492,10 +362,10 @@ impl TokenKind {
 
     pub fn as_postfix(self) -> Option<UnaryOp> {
         use UnaryOp::*;
-        match self {
+        match self.kind {
             PlusPlus => Some(Inc),
             DashDash => Some(Dec),
-            Self::Not => Some(Fac),
+            TokenKind::Not => Some(Fac),
             _ => None,
         }
     }
