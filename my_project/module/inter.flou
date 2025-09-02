@@ -1,9 +1,2 @@
-main = proc {
-    takes_func(
-        func proc(a u32, b u32): u32
-    )
-
-    add = add(a u32, b u32): u32
-
-    takes_func(add)
-} return 0
+main + 1
+w 10

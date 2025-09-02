@@ -13,7 +13,7 @@ use crate::{
             resolve_escape_sequences,
             token::{Token, TokenKind::*},
         },
-        tree::{Bracket, Jump, Node, NodeBox, Note},
+        tree::{Bracket, Node, NodeBox, Note},
         unary_op::UnaryOp,
         NodeWrapper, Parser,
     },
@@ -28,7 +28,7 @@ impl<'src> Token<'src> {
                     state.make_node(NodeWrapper::new(self.span).with_node(Node::Placeholder))
                 } else if min_bp <= 1 && state.tokenizer.next_is(|tok| tok.binding_pow() == Some(0))
                 {
-                    let content = state.pop_expr(1, self.span.end + 1);
+                    let content = state.pop_expr(1, self.span.end);
                     let label = state.internalizer.get(self.src);
                     state.make_node(
                         NodeWrapper::new(self.span - content.span.end)
@@ -79,13 +79,13 @@ impl<'src> Token<'src> {
                 use Keyword::*;
                 match keyword {
                     If | Loop => {
-                        let condition = state.pop_expr(binding_pow::STATEMENT, self.span.end + 1);
+                        let condition = state.pop_expr(binding_pow::STATEMENT, self.span.end);
 
-                        let then_body = state.pop_path(4, condition.span.end + 1);
+                        let then_body = state.pop_path(4, condition.span.end);
                         let else_body = if let Some(Token { span, .. }) =
                             state.tokenizer.next_if(|x| x.kind == Keyword(Else))
                         {
-                            Some(state.pop_path(4, span.end + 1))
+                            Some(state.pop_path(4, span.end))
                         } else {
                             None
                         };
@@ -105,7 +105,7 @@ impl<'src> Token<'src> {
                     }
                     Else => {
                         state.errors.push(self.span, ErrorCode::LonelyElse);
-                        state.pop_expr(min_bp, self.span.end + 1); // consume else body - could lead to better error messages
+                        state.pop_expr(min_bp, self.span.end); // consume else body - could lead to better error messages
                         state.parse_expr(min_bp)?
                     }
                     _ => {
@@ -115,12 +115,12 @@ impl<'src> Token<'src> {
                 }
             }
             Tick => {
-                let (ident_span, symbol) = state.next_identifier(self.span.end + 1);
+                let (ident_span, symbol) = state.next_identifier(self.span.end);
                 if let Some(tok) = state
                     .tokenizer
                     .next_if(|tok| matches!(tok.kind, RightArrow))
                 {
-                    let rhs = state.pop_expr(binding_pow::SINGLE_VALUE, tok.span.end + 1);
+                    let rhs = state.pop_expr(binding_pow::SINGLE_VALUE, tok.span.end);
                     state.make_node(
                         NodeWrapper::new(ident_span - rhs.span).with_node(Node::Ref {
                             lifetime: Some(symbol),
@@ -137,7 +137,7 @@ impl<'src> Token<'src> {
             Open(own_bracket) => {
                 state.brackets += 1;
                 let Some(content) = state.parse_expr(0) else {
-                    let end = state.handle_closed_bracket(self.span.end + 1, own_bracket);
+                    let end = state.handle_closed_bracket(self.span.end, own_bracket);
                     return Some(
                         state.make_node(NodeWrapper::new(self.span - end).with_node(Node::Unit)),
                     );
@@ -145,7 +145,7 @@ impl<'src> Token<'src> {
 
                 let mut content = state.parse_list(content);
 
-                let end = state.handle_closed_bracket(self.span.end + 1, own_bracket);
+                let end = state.handle_closed_bracket(self.span.end, own_bracket);
                 content.span = self.span - end;
                 content
             }
@@ -170,27 +170,25 @@ impl<'src> Token<'src> {
                 } else*/
                 if count.get().is_odd() {
                     let op = UnaryOp::Neg;
-                    let operand = state.pop_expr(op.binding_pow(), self.span.end + 1);
+                    let operand = state.pop_expr(op.binding_pow(), self.span.end);
                     state.make_node(
                         NodeWrapper::new(self.span).with_node(Node::Unary { op, val: operand }),
                     )
                 } else {
-                    state.pop_expr(UnaryOp::Neg.binding_pow(), self.span.end + 1)
+                    state.pop_expr(UnaryOp::Neg.binding_pow(), self.span.end)
                 }
             }
             RightArrow => {
-                let val = state.pop_expr(min_bp, self.span.end + 1);
+                let val = state.pop_expr(min_bp, self.span.end);
                 state.make_node(NodeWrapper::new(self.span).with_node(Node::Ref {
                     lifetime: None,
                     val,
                 }))
             }
-            Plus | PlusPlus | NotNot => {
-                state.pop_expr(UnaryOp::Neg.binding_pow(), self.span.end + 1)
-            }
+            Plus | PlusPlus | NotNot => state.pop_expr(UnaryOp::Neg.binding_pow(), self.span.end),
             kind => match kind.as_prefix() {
                 Some(op) => {
-                    let val = state.pop_expr(op.binding_pow(), self.span.end + 1);
+                    let val = state.pop_expr(op.binding_pow(), self.span.end);
                     state.make_node(NodeWrapper::new(self.span).with_node(Node::Unary { op, val }))
                 }
                 _ => {
@@ -219,7 +217,7 @@ impl<'src> Token<'src> {
                 });
 
                 let content = state.parse_list(content);
-                let end = state.handle_closed_bracket(self.span.end + 1, bracket);
+                let end = state.handle_closed_bracket(self.span.end, bracket);
                 state.make_node(NodeWrapper::new(self.span - end).with_node(Node::Binary {
                     op,
                     lhs,
@@ -234,7 +232,7 @@ impl<'src> Token<'src> {
                 self.span.end + 1,
             ),
             Colon => {
-                let rhs = state.pop_expr(binding_pow::COLON, self.span.end + 1);
+                let rhs = state.pop_expr(binding_pow::COLON, self.span.end);
                 state.make_node(
                     NodeWrapper::new(lhs.span - rhs.span).with_node(Node::Contract { lhs, rhs }),
                 )
@@ -268,7 +266,7 @@ impl<'src> Token<'src> {
             }
             Dash(..) => {
                 let op = BinaryOp::Sub;
-                let rhs = state.pop_expr(op.binding_pow(), self.span.end + 1);
+                let rhs = state.pop_expr(op.binding_pow(), self.span.end);
                 state.make_node(
                     NodeWrapper::new(lhs.span - rhs.span).with_node(Node::Binary { op, lhs, rhs }),
                 )
@@ -280,7 +278,7 @@ impl<'src> Token<'src> {
                             .with_node(Node::Unary { op, val: lhs }),
                     )
                 } else if let Some(op) = self.kind.as_infix() {
-                    let rhs = state.pop_expr(op.binding_pow(), self.span.end + 1);
+                    let rhs = state.pop_expr(op.binding_pow(), self.span.end);
                     if op.is_chained() {
                         let mut chain = comp::Vec::new([(op, rhs)]);
                         while let Some(op) =
@@ -288,7 +286,7 @@ impl<'src> Token<'src> {
                         {
                             if op.is_chained() {
                                 let Token { span, .. } = state.tokenizer.next().unwrap();
-                                let rhs = state.pop_expr(op.binding_pow(), span.end + 1);
+                                let rhs = state.pop_expr(op.binding_pow(), span.end);
                                 chain.push((op, rhs));
                                 continue;
                             }

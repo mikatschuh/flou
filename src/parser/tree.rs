@@ -112,7 +112,7 @@ impl<'src> TreeDisplay<'src> for NodeWrapper<'src> {
             Placeholder => "..".to_owned(),
             Quote(quote) => format!("Quote  \"{}\"", with_written_out_escape_sequences(quote)),
             Label { label, content } => format!(
-                "Label  {} {}",
+                "Label  {}, {}",
                 internalizer.resolve(*label),
                 content.display(internalizer, indentation)
             ),

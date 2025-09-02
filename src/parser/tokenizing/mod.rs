@@ -216,7 +216,7 @@ impl<'src> Tokenizer<'src> {
         while let Some(c) = self.next_char() {
             if c == '"' {
                 self.buffer.push_back(Token {
-                    span: self.span,
+                    span: self.span.start - self.span.end + 1,
                     src: &self.text[start_i..self.next_i],
                     kind: TokenKind::Quote,
                 });
@@ -239,12 +239,12 @@ impl<'src> Tokenizer<'src> {
     fn submit_current(&mut self, span: Span, end_i: usize) {
         match self.state {
             State::Op(token) => self.buffer.push_back(Token {
-                span,
+                span: span.start - span.end + 1,
                 src: &self.text[self.start_i..end_i],
                 kind: token,
             }),
             State::Id => self.buffer.push_back(Token {
-                span,
+                span: span.start - span.end + 1,
                 kind: Keyword::from_str(&self.text[self.start_i..end_i])
                     .map(TokenKind::Keyword)
                     .unwrap_or(TokenKind::Ident),
