@@ -23,7 +23,6 @@ pub trait TreeDisplay<'src> {
 }
 
 const DISPLAY_INDENTATION: &str = "|   ";
-const DISPLAY_INDENTATION_NEG_1: &str = "   ";
 #[derive(Debug, PartialEq, Eq)]
 pub struct NodeWrapper<'src> {
     pub span: Span,
@@ -298,30 +297,6 @@ impl<'src> Path<'src> {
     #[inline]
     pub const fn is_none(&self) -> bool {
         self.node.is_none() && self.jump.is_none()
-    }
-
-    #[inline]
-    pub const fn is_some(&self) -> bool {
-        !self.is_none()
-    }
-
-    pub fn none() -> Self {
-        Self {
-            node: None,
-            jump: None,
-        }
-    }
-    pub const fn node(node: NodeBox<'src>) -> Self {
-        Self {
-            node: Some(node),
-            jump: None,
-        }
-    }
-    pub fn jump(jump: Jump<'src>) -> Self {
-        Self {
-            node: None,
-            jump: Some(jump),
-        }
     }
 }
 

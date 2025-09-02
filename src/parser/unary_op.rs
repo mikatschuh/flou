@@ -10,6 +10,8 @@ pub enum UnaryOp {
     // after one argument // unary - postfix - ops
     Inc, // a++
     Dec, // b--
+
+    Fac, // a!
 }
 
 use UnaryOp::*;
@@ -22,6 +24,7 @@ impl fmt::Display for UnaryOp {
 
             Inc => "++",
             Dec => "--",
+            Fac => "_!",
         };
         write!(f, "{string}")
     }

@@ -4,7 +4,7 @@ use crate::{
 };
 use colored::{ColoredString, Colorize};
 use num::Integer;
-use std::{fmt::Display, num::NonZeroU32};
+use std::{fmt::Display, num::NonZeroU64};
 
 #[derive(PartialEq, Debug, Clone, Copy, Eq)]
 pub struct Token<'src> {
@@ -39,7 +39,7 @@ pub enum TokenKind {
     Plus,             // +
     PlusPlus,         // ++
     PlusEqual,        // +=
-    Dash(NonZeroU32), // (-)+
+    Dash(NonZeroU64), // (-)+
     DashEqual,        // -=
 
     Star,         // *
@@ -194,8 +194,8 @@ impl<'a> Token<'a> {
 }
 
 impl TokenKind {
-    pub const DASH_DASH: Self = Self::Dash(unsafe { NonZeroU32::new_unchecked(2) });
-    pub const DASH: Self = Self::Dash(unsafe { NonZeroU32::new_unchecked(1) });
+    pub const DASH_DASH: Self = Self::Dash(unsafe { NonZeroU64::new_unchecked(2) });
+    pub const DASH: Self = Self::Dash(unsafe { NonZeroU64::new_unchecked(1) });
 
     pub fn new(c: char) -> Option<TokenKind> {
         match c {
@@ -507,6 +507,7 @@ impl TokenKind {
         use UnaryOp::*;
         match self {
             PlusPlus => Some(Inc),
+            Self::Not => Some(Fac),
             _ => None,
         }
     }

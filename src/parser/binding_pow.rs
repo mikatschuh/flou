@@ -20,9 +20,7 @@ impl<'src> Token<'src> {
         Some(match self.kind {
             Closed(..) | Comma | Keyword(Else | Continue | Break | Return) => return None,
 
-            Not | NotNot | Tick | RightArrow | Ident | Quote | Keyword(If | Loop) | Open(Curly) => {
-                0
-            }
+            Tick | RightArrow | Ident | Quote | Keyword(If | Loop) | Open(Curly) => 0,
 
             Equal | EqualPipe => 2,
 
@@ -49,6 +47,8 @@ impl<'src> Token<'src> {
 
             Star | Slash | Percent | Dot | Cross => 110,
 
+            Not | NotNot => 115,
+
             Up => 121,
 
             Open(Squared | Round) => 130,
@@ -60,7 +60,9 @@ impl UnaryOp {
     pub const fn binding_pow(self) -> u8 {
         use UnaryOp::*;
         match self {
-            Inc | Dec => 10,
+            Inc | Dec => 0,
+            Fac => 0,
+
             Neg => 115,
             Not => 125,
         }

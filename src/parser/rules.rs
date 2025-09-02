@@ -1,4 +1,4 @@
-use std::num::NonZeroU32;
+use std::num::NonZeroU64;
 
 use num::Integer;
 
@@ -200,7 +200,7 @@ impl<'src> Token<'src> {
     }
 
     pub(super) fn led(
-        mut self,
+        self,
         lhs: NodeBox<'src>,
         state: &mut Parser<'src>,
     ) -> Result<NodeBox<'src>, NodeBox<'src>> {
@@ -253,22 +253,52 @@ impl<'src> Token<'src> {
                 )
             }
             Dash(count) if count.get() > 1 => {
-                if let Some(new_count) = NonZeroU32::new(count.get() - 2) {
-                    self.kind = Dash(new_count);
-                    state.tokenizer.buffer(self);
-                }
-                state.make_node(
-                    NodeWrapper::new(lhs.span - self.span).with_node(Node::Unary {
+                let end = if count.get() & 1 == 1 {
+                    state.tokenizer.buffer(Token {
+                        span: self.span,
+                        src: &self.src[self.src.len() - 1..],
+                        kind: Dash(NonZeroU64::new(1).unwrap()),
+                    }); // its ok to buffer now because we wont be reading the stream anymore
+                    self.span.end - 1
+                } else {
+                    self.span.end
+                };
+                let decs = count.get() >> 1; // fast div by two
+                if decs == 1 {
+                    state.make_node(NodeWrapper::new(lhs.span - end).with_node(Node::Unary {
                         op: UnaryOp::Dec,
                         val: lhs,
-                    }),
-                )
+                    }))
+                } else {
+                    let num = state.make_node(
+                        NodeWrapper::new(self.span.start + 2 - end)
+                            .with_node(Node::Literal { val: decs.into() }),
+                    );
+                    state.make_node(NodeWrapper::new(lhs.span - end).with_node(Node::Binary {
+                        op: BinaryOp::SubAssign,
+                        lhs,
+                        rhs: num,
+                    }))
+                }
             }
             Dash(..) => {
                 let op = BinaryOp::Sub;
                 let rhs = state.pop_expr(op.binding_pow(), self.span.end);
                 state.make_node(
                     NodeWrapper::new(lhs.span - rhs.span).with_node(Node::Binary { op, lhs, rhs }),
+                )
+            }
+            NotNot => {
+                state.tokenizer.buffer(Token {
+                    span: self.span.start + 1 - self.span.end,
+                    src: &self.src[self.src.len() - 1..],
+                    kind: Not,
+                });
+                state.make_node(
+                    NodeWrapper::new(lhs.span - self.span).with_node(Node::Unary {
+                        op: UnaryOp::Fac,
+                        val: lhs,
+                    }),
                 )
             }
             _ => {
