@@ -173,11 +173,6 @@ impl<'src> Tokenizer<'src> {
     fn restock_tokens(&mut self) {
         while let Some(c) = self.next_char() {
             if c.is_whitespace() {
-                if matches!(self.state, State::Op(TokenKind::Not | TokenKind::NotNot))
-                // ignore whitespaces when parsing a '!'
-                {
-                    continue;
-                }
                 self.submit_current(self.span - 1, self.i); // -1 to ignore the whitespace
             } else {
                 if c == '"' {

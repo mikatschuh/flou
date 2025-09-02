@@ -52,7 +52,6 @@ pub enum ErrorCode<'src> {
     ExpectedValue,
     ExpectedIdent,
     ExpectedFunctionName,
-    IdentWithJustDot,
 
     NoClosingQuotes { quote: &'src str },
     // control structure mistakes
@@ -163,15 +162,6 @@ macro_rules! format_error {
         )
     };
 }
-macro_rules! concat_display {
-    ( $( $arg:expr ),* ) => {{
-        let mut s = String::new();
-        $(
-            write!(&mut s, "{}", $arg).unwrap();
-        )*
-        s
-    }};
-}
 #[macro_export]
 macro_rules! format_error_quote_arg {
     () => {
@@ -206,11 +196,7 @@ impl Error<'_> {
                 self.section.to_string(path),
                 "expected the name of the function"
             ),
-            IdentWithJustDot => format_error!(
-                self.section.to_string(path),
-                "an identifier was just made of a single dot",
-                "identifiers have to contain more than just a leading dot"
-            ),
+
             NoClosingQuotes { quote } => format_error!(
                 self.section.to_string(path),
                 "the ending quotes of the quote {} were missing",
@@ -260,7 +246,7 @@ impl Error<'_> {
             WrongClosedBracket { expected, found } => {
                 format_error!(
                     self.section.to_string(path),
-                    "found the closed bracket {} but actually expected {}",
+                    "found a closed bracket {} but actually expected {}",
                     [found.display_closed(), expected.display_closed()]
                 )
             }
@@ -296,8 +282,7 @@ impl fmt::Display for CliError {
     }
 }
 
-use crate::parser::tokenizing::token::Token;
-use crate::tree::Bracket;
+use crate::parser::tree::Bracket;
 use std::path::Path;
 
 fn remove_quotes(path: &Path) -> String {

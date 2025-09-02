@@ -13,37 +13,58 @@ use crate::{
             resolve_escape_sequences,
             token::{Token, TokenKind::*},
         },
+        tree::{Bracket, Jump, Node, NodeBox, Note},
         unary_op::UnaryOp,
-        InBrackets,
-        Location::{self, *},
-        NodeWrapper, Parser, StackData,
+        NodeWrapper, Parser,
     },
-    tree::{Bracket, EveryJump, Jump, Node, NodeBox, Note},
+    typing::Type,
 };
 
 impl<'src> Token<'src> {
-    pub(super) fn nud<'caller, J: Jump<'src>>(
+    pub(super) fn nud(
         self,
         state: &mut Parser<'src>,
         min_bp: u8,
-        flags: StackData<'src, 'caller, J>,
-    ) -> Option<NodeBox<'src, J>> {
+        jump: &mut Option<Jump<'src>>,
+    ) -> Option<NodeBox<'src>> {
         Some(match self.kind {
             Ident => {
-                if let Some(src) = self.src.strip_prefix('.') {
-                    if let "." = src {
-                        state.make_node(NodeWrapper::new(self.span).with_node(Node::Placeholder))
-                    } else if !src.is_empty() {
-                        state.make_node(
-                            NodeWrapper::new(self.span)
-                                .with_node(Node::Field(state.internalizer.get(src))),
-                        )
-                    } else {
-                        state.errors.push(self.span, ErrorCode::IdentWithJustDot);
-                        state.make_node(NodeWrapper::new(self.span))
-                    }
+                if self.src == ".." {
+                    state.make_node(NodeWrapper::new(self.span).with_node(Node::Placeholder))
+                } else if min_bp <= 1 && state.tokenizer.next_is(|tok| tok.binding_pow() == Some(0))
+                {
+                    let content = state.pop_expr(1, jump, self.span.end + 1);
+                    let label = state.internalizer.get(self.src);
+                    state.make_node(
+                        NodeWrapper::new(self.span - content.span.end)
+                            .with_node(Node::Label { label, content }),
+                    )
+                } else if let Some(primitive_type) =
+                    state.type_parser.parse_number_type(self.src.as_bytes())
+                {
+                    state.make_node(
+                        NodeWrapper::new(self.span)
+                            .with_node(Node::PrimitiveType(Type::Number(primitive_type))),
+                    )
                 } else {
-                    state.convert_to_num_if_possible(self.span, self.src, flags)
+                    match state.try_to_make_number(self.span, self.src, jump) {
+                        Ok(node) => node,
+
+                        Err(Some(suffix)) => {
+                            let sym = state.internalizer.get(self.src);
+                            state.make_node(
+                                NodeWrapper::new(self.span)
+                                    .with_node(Node::Ident(sym))
+                                    .with_note(Note::NumberParsingNote {
+                                        invalid_suffix: suffix,
+                                    }),
+                            )
+                        }
+                        Err(None) => {
+                            let sym = state.internalizer.get(self.src);
+                            state.make_node(NodeWrapper::new(self.span).with_node(Node::Ident(sym)))
+                        }
+                    }
                 }
             }
             Quote => {
@@ -64,13 +85,13 @@ impl<'src> Token<'src> {
                 match keyword {
                     If | Loop => {
                         let condition =
-                            state.pop_expr(self.span.end + 1, 4, flags.outside_of_brackets());
-                        let then_body =
-                            state.pop_path(condition.span.end + 1, 4, flags.in_brackets);
+                            state.pop_expr(binding_pow::STATEMENT, jump, self.span.end + 1);
+
+                        let then_body = state.pop_path(4, condition.span.end + 1);
                         let else_body = if let Some(Token { span, .. }) =
                             state.tokenizer.next_if(|x| x.kind == Keyword(Else))
                         {
-                            Some(state.pop_path(span.end + 1, 4, flags.in_brackets))
+                            Some(state.pop_path(4, span.end + 1))
                         } else {
                             None
                         };
@@ -90,72 +111,35 @@ impl<'src> Token<'src> {
                     }
                     Else => {
                         state.errors.push(self.span, ErrorCode::LonelyElse);
-                        state.parse_expr(min_bp, flags)?
+                        state.parse_expr(min_bp, jump)?
                     }
-                    Continue => match flags.loc {
-                        Path(jump) => {
-                            let layers = 1 + state // +1 because we already saw continue ones
-                                .tokenizer
-                                .consume_while(|token| token.kind == Keyword(Continue))
-                                .count();
-
-                            jump.write(Some(Box::new(EveryJump::Continue { layers })));
-                            state.clean_up_after_jump();
+                    Continue => {
+                        *jump = Some(Jump::Continue);
+                        state.clean_up_after_jump();
+                        return None;
+                    }
+                    Break => {
+                        let val = state.parse_expr(binding_pow::STATEMENT, jump);
+                        if jump.is_some() {
                             return None;
                         }
-                        FuncArg => {
-                            state.errors.push(
-                                self.span,
-                                ErrorCode::JumpInsideFuncArg { keyword: self.src },
-                            );
-                            state.parse_expr(min_bp, flags)?
-                        }
-                    },
-                    Break => match flags.loc {
-                        Path(jump) => {
-                            let layers = 1 + state
-                                .tokenizer
-                                .consume_while(|token| token.kind == Keyword(Exit))
-                                .count();
-                            jump.write(Some(Box::new(EveryJump::Break {
-                                layers,
-                                val: Box::new(state.parse_path(
-                                    self.span.end + 1,
-                                    4,
-                                    flags.in_brackets,
-                                )),
-                            })));
-                            state.clean_up_after_jump();
+                        *jump = Some(Jump::Break {
+                            val: val.map(Box::new),
+                        });
+                        state.clean_up_after_jump();
+                        return None;
+                    }
+                    Return => {
+                        let val = state.parse_expr(binding_pow::STATEMENT, jump);
+                        if jump.is_some() {
                             return None;
                         }
-                        FuncArg => {
-                            state.errors.push(
-                                self.span,
-                                ErrorCode::JumpInsideFuncArg { keyword: self.src },
-                            );
-                            state.parse_expr(min_bp, flags)?
-                        }
-                    },
-                    Return => match flags.loc {
-                        Path(jump) => {
-                            jump.write(Some(Box::new(EveryJump::Return {
-                                val: Box::new(state.parse_path(
-                                    self.span.end + 1,
-                                    binding_pow::STATEMENT,
-                                    flags.in_brackets,
-                                )),
-                            })));
-                            state.clean_up_after_jump();
-                            return None;
-                        }
-                        FuncArg => {
-                            state.errors.push(
-                                self.span,
-                                ErrorCode::JumpInsideFuncArg { keyword: self.src },
-                            );
-                            state.parse_expr(min_bp, flags)?
-                        }
-                    },
+                        *jump = Some(Jump::Return {
+                            val: val.map(Box::new),
+                        });
+                        state.clean_up_after_jump();
+                        return None;
+                    }
                 }
             }
             Tick => {
@@ -164,7 +148,7 @@ impl<'src> Token<'src> {
                     .tokenizer
                     .next_if(|tok| matches!(tok.kind, RightArrow))
                 {
-                    let rhs = state.pop_expr(tok.span.end + 1, binding_pow::SINGLE_VALUE, flags);
+                    let rhs = state.pop_expr(binding_pow::SINGLE_VALUE, jump, tok.span.end + 1);
                     state.make_node(
                         NodeWrapper::new(ident_span - rhs.span).with_node(Node::Ref {
                             lifetime: Some(symbol),
@@ -179,29 +163,21 @@ impl<'src> Token<'src> {
                 }
             }
             Open(own_bracket) => {
-                if let Some(mut content) =
-                    state.parse_expr(0, flags.in_brackets(InBrackets::Container))
-                {
-                    state.parse_list(&mut content, flags);
-                    let end = state.handle_closed_bracket(
-                        self.span.end + 1,
-                        self.span,
-                        own_bracket,
-                        flags,
+                state.brackets += 1;
+                let Some(content) = state.parse_expr(0, jump) else {
+                    let end = state.handle_closed_bracket(self.span.end + 1, own_bracket);
+                    return Some(
+                        state.make_node(NodeWrapper::new(self.span - end).with_node(Node::Unit)),
                     );
-                    content.span.end = end.end;
-                    content
-                } else {
-                    let end = state.handle_closed_bracket(
-                        self.span.end + 1,
-                        self.span,
-                        own_bracket,
-                        flags,
-                    );
-                    state.make_node(NodeWrapper::new(self.span.start - end).with_node(Node::Unit))
-                }
+                };
+
+                let mut content = state.parse_list(content, jump);
+
+                let end = state.handle_closed_bracket(self.span.end + 1, own_bracket);
+                content.span = self.span - end;
+                content
             }
-            Closed(..) if flags.in_brackets.is_some() => {
+            Closed(..) if state.brackets > 0 => {
                 state.tokenizer.buffer(self);
                 return None;
             }
@@ -212,36 +188,37 @@ impl<'src> Token<'src> {
                 return None;
             }
             Dash(count) => {
-                if state
+                /*if state
                     .tokenizer
                     .next_is(|tok| matches!(tok.kind, Closed(..)))
                 {
                     let lhs = state.make_node(NodeWrapper::new(self.span));
                     state.dash_slot = Some(lhs);
                     lhs
-                } else if count.get().is_odd() {
+                } else*/
+                if count.get().is_odd() {
                     let op = UnaryOp::Neg;
-                    let operand = state.pop_expr(self.span.end + 1, op.binding_pow(), flags);
+                    let operand = state.pop_expr(op.binding_pow(), jump, self.span.end + 1);
                     state.make_node(
                         NodeWrapper::new(self.span).with_node(Node::Unary { op, val: operand }),
                     )
                 } else {
-                    state.pop_expr(self.span.end + 1, UnaryOp::Neg.binding_pow(), flags)
+                    state.pop_expr(UnaryOp::Neg.binding_pow(), jump, self.span.end + 1)
                 }
             }
             RightArrow => {
-                let val = state.pop_expr(self.span.end + 1, min_bp, flags);
+                let val = state.pop_expr(min_bp, jump, self.span.end + 1);
                 state.make_node(NodeWrapper::new(self.span).with_node(Node::Ref {
                     lifetime: None,
                     val,
                 }))
             }
             Plus | PlusPlus | NotNot => {
-                state.pop_expr(self.span.end + 1, UnaryOp::Neg.binding_pow(), flags)
+                state.pop_expr(UnaryOp::Neg.binding_pow(), jump, self.span.end + 1)
             }
             kind => match kind.as_prefix() {
                 Some(op) => {
-                    let val = state.pop_expr(self.span.end + 1, op.binding_pow(), flags);
+                    let val = state.pop_expr(op.binding_pow(), jump, self.span.end + 1);
                     state.make_node(NodeWrapper::new(self.span).with_node(Node::Unary { op, val }))
                 }
                 _ => {
@@ -252,137 +229,44 @@ impl<'src> Token<'src> {
         })
     }
 
-    pub(super) fn led<'caller, J: Jump<'src>>(
+    pub(super) fn led(
         mut self,
-        lhs: NodeBox<'src, J>,
-        state: &'caller mut Parser<'src>,
-        flags: StackData<'src, 'caller, J>,
-    ) -> NodeBox<'src, J> {
-        match self.kind {
-            Open(Bracket::Round | Bracket::Squared) => {
-                let bracket = match self.kind {
-                    Open(bracket) => bracket,
-                    _ => unreachable!(),
-                };
+        lhs: NodeBox<'src>,
+        state: &mut Parser<'src>,
+        jump: &mut Option<Jump<'src>>,
+    ) -> Result<NodeBox<'src>, NodeBox<'src>> {
+        Ok(match self.kind {
+            Open(bracket) if matches!(bracket, Bracket::Round | Bracket::Squared) => {
+                state.brackets += 1;
                 let op = match bracket {
                     Bracket::Round => BinaryOp::App,
                     Bracket::Squared => BinaryOp::Index,
                     _ => unreachable!(),
                 };
-                let flags = flags.in_brackets(InBrackets::Application);
+                let content = state.parse_expr(0, jump).unwrap_or_else(|| {
+                    state.make_node(NodeWrapper::new(self.span.end() + 1).with_node(Node::Unit))
+                });
 
-                let Some(mut content) = state.parse_expr(binding_pow::STATEMENT, flags) else {
-                    let content = state
-                        .make_node(NodeWrapper::new(self.span.end() + 1).with_node(Node::Unit));
-                    let end =
-                        state.handle_closed_bracket(self.span.end + 1, self.span, bracket, flags);
-                    return state.make_node(NodeWrapper::new(lhs.span - end).with_node(
-                        Node::Binary {
-                            op,
-                            lhs,
-                            rhs: content,
-                        },
-                    ));
-                };
-
-                if let Some(arg_type) =
-                    state.parse_expr(binding_pow::STATEMENT, flags.location(Location::FuncArg))
-                {
-                    let (func_name, generics) = if let Some(Node::Binary {
-                        op: BinaryOp::Index,
-                        lhs,
-                        rhs,
-                    }) = lhs.node
-                    {
-                        if let Some(Node::Ident(name)) = lhs.node {
-                            name
-                        } else {
-                            state.errors.push(lhs.span, ErrorCode::ExpectedFunctionName);
-                            state.internalizer.empty()
-                        };
-                        todo!()
-                    } else if let Some(Node::Ident(name)) = lhs.node {
-                        (name, Generics::new())
-                    } else {
-                        state.errors.push(lhs.span, ErrorCode::ExpectedFunctionName);
-                        (state.internalizer.empty(), Generics::new())
-                    };
-
-                    let mut args = vec![(content, arg_type)];
-                    while let Some(Token { span, .. }) =
-                        state.tokenizer.next_if(|tok| tok.kind == Comma)
-                    {
-                        let arg = state.pop_expr(span.end + 1, binding_pow::STATEMENT, flags);
-                        let arg_type =
-                            state.pop_expr(arg.span.end + 1, binding_pow::STATEMENT, flags);
-
-                        args.push((arg, arg_type));
-                    }
-                    let end =
-                        state.handle_closed_bracket(self.span.end + 1, self.span, bracket, flags);
-
-                    let return_type = state.pop_expr(end.end + 1, binding_pow::STATEMENT, flags);
-                    let body = if state
-                        .tokenizer
-                        .next_is(|tok| tok.kind == Closed(Bracket::Curly))
-                    {
-                        Some(state.parse_path(
-                            return_type.span.end + 1,
-                            binding_pow::STATEMENT,
-                            flags.in_brackets,
-                        ))
-                    } else {
-                        None
-                    };
-                    let end = body
-                        .as_ref()
-                        .map_or_else(|| return_type.span, |body| body.content.span)
-                        .end;
-                    let None = state.items.insert(
-                        func_name,
-                        Function {
-                            is_indexing: op == BinaryOp::Index,
-                            generics,
-                            args,
-                            return_type,
-                            body,
-                        },
-                    ) else {
-                        todo!()
-                    };
-                    state.make_node(NodeWrapper::new(lhs.span - end))
-                } else {
-                    state.parse_list(&mut content, flags);
-                    let end =
-                        state.handle_closed_bracket(self.span.end + 1, self.span, bracket, flags);
-                    state.make_node(NodeWrapper::new(self.span - end).with_node(Node::Binary {
-                        op: BinaryOp::App,
-                        lhs,
-                        rhs: content,
-                    }))
-                }
+                let content = state.parse_list(content, jump);
+                let end = state.handle_closed_bracket(self.span.end + 1, bracket);
+                state.make_node(NodeWrapper::new(self.span - end).with_node(Node::Binary {
+                    op,
+                    lhs,
+                    rhs: content,
+                }))
             }
-            Equal => {
-                let rhs = state.pop_expr(self.span.end + 1, binding_pow::BINDING, flags);
-                state.make_node(
-                    NodeWrapper::new(lhs.span - rhs.span).with_node(Node::Binding { lhs, rhs }),
-                )
-            }
+            Equal => state.parse_dynamic_arg_op(
+                lhs,
+                Equal,
+                binding_pow::BINDING,
+                |exprs| Node::Binding { exprs },
+                self.span.end + 1,
+                jump,
+            ),
             Colon => {
-                let rhs = state.pop_expr(self.span.end + 1, binding_pow::COLON, flags);
-                let mut chain = comp::Vec::new([lhs, rhs]);
-                while state
-                    .tokenizer
-                    .peek()
-                    .is_some_and(|token| token.kind == Colon)
-                {
-                    let Token { span, .. } = state.tokenizer.next().unwrap();
-                    let rhs = state.pop_expr(span.end + 1, binding_pow::COLON, flags);
-                    chain.push(rhs)
-                }
+                let rhs = state.pop_expr(binding_pow::COLON, jump, self.span.end + 1);
                 state.make_node(
-                    NodeWrapper::new(lhs.span - chain.last().span)
-                        .with_node(Node::ColonStruct(chain)),
+                    NodeWrapper::new(lhs.span - rhs.span).with_node(Node::Contract { lhs, rhs }),
                 )
             }
             EqualPipe => {
@@ -391,10 +275,14 @@ impl<'src> Token<'src> {
                     src: &self.src[1..2],
                     kind: Pipe,
                 });
-                let rhs = state.pop_expr(self.span.end + 1, binding_pow::BINDING, flags);
-                state.make_node(
-                    NodeWrapper::new(lhs.span - state.arena[rhs].span)
-                        .with_node(Node::Binding { lhs, rhs }),
+
+                state.parse_dynamic_arg_op(
+                    lhs,
+                    Equal,
+                    binding_pow::BINDING,
+                    |exprs| Node::Binding { exprs },
+                    self.span.end + 1,
+                    jump,
                 )
             }
             Dash(count) if count.get() > 1 => {
@@ -411,13 +299,9 @@ impl<'src> Token<'src> {
             }
             Dash(..) => {
                 let op = BinaryOp::Sub;
-                let rhs = state.pop_expr(self.span.end + 1, op.binding_pow(), flags);
+                let rhs = state.pop_expr(op.binding_pow(), jump, self.span.end + 1);
                 state.make_node(
-                    NodeWrapper::new(lhs.span - state.arena[rhs].span).with_node(Node::Binary {
-                        op,
-                        lhs,
-                        rhs,
-                    }),
+                    NodeWrapper::new(lhs.span - rhs.span).with_node(Node::Binary { op, lhs, rhs }),
                 )
             }
             _ => {
@@ -427,7 +311,7 @@ impl<'src> Token<'src> {
                             .with_node(Node::Unary { op, val: lhs }),
                     )
                 } else if let Some(op) = self.kind.as_infix() {
-                    let rhs = state.pop_expr(self.span.end + 1, op.binding_pow(), flags);
+                    let rhs = state.pop_expr(op.binding_pow(), jump, self.span.end + 1);
                     if op.is_chained() {
                         let mut chain = comp::Vec::new([(op, rhs)]);
                         while let Some(op) =
@@ -435,7 +319,7 @@ impl<'src> Token<'src> {
                         {
                             if op.is_chained() {
                                 let Token { span, .. } = state.tokenizer.next().unwrap();
-                                let rhs = state.pop_expr(span.end + 1, op.binding_pow(), flags);
+                                let rhs = state.pop_expr(op.binding_pow(), jump, span.end + 1);
                                 chain.push((op, rhs));
                                 continue;
                             }
@@ -457,21 +341,9 @@ impl<'src> Token<'src> {
                         )
                     }
                 } else {
-                    state.tokenizer.buffer(self);
-
-                    let Some(rhs) = state.parse_expr(binding_pow::STATEMENT, flags) else {
-                        return lhs;
-                    };
-                    let mut chain = comp::Vec::new([lhs, rhs]);
-                    while let Some(rhs) = state.parse_expr(binding_pow::STATEMENT, flags) {
-                        chain.push(rhs)
-                    }
-                    state.make_node(
-                        NodeWrapper::new(lhs.span - chain.last().span)
-                            .with_node(Node::Statements(chain)),
-                    )
+                    return Err(lhs);
                 }
             }
-        }
+        })
     }
 }

@@ -25,14 +25,14 @@ pub trait TreeDisplay<'src> {
 const DISPLAY_INDENTATION: &str = "|   ";
 const DISPLAY_INDENTATION_NEG_1: &str = "   ";
 #[derive(Debug, PartialEq, Eq)]
-pub struct NodeWrapper<'src, J: Jump<'src>> {
+pub struct NodeWrapper<'src> {
     pub span: Span,
-    pub node: Option<Node<'src, J>>,
-    pub typed: Option<Type<'src, J>>,
+    pub node: Option<Node<'src>>,
+    pub typed: Option<Type<'src>>,
     pub notes: Vec<Note<'src>>,
 }
 
-impl<'src, J: Jump<'src>> NodeWrapper<'src, J> {
+impl<'src> NodeWrapper<'src> {
     pub fn new(span: Span) -> Self {
         Self {
             span,
@@ -52,18 +52,30 @@ impl<'src, J: Jump<'src>> NodeWrapper<'src, J> {
         self
     }
     #[inline]
-    pub fn with_type(mut self, typed: Type<'src, J>) -> Self {
+    pub fn with_type(mut self, typed: Type<'src>) -> Self {
         self.typed = Some(typed);
         self
     }
     #[inline]
-    pub fn with_node(mut self, node: Node<'src, J>) -> Self {
+    pub fn with_node(mut self, node: Node<'src>) -> Self {
         self.node = Some(node);
         self
     }
 }
 
-impl<'src, J: Jump<'src>> TreeDisplay<'src> for NodeWrapper<'src, J> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Note<'src> {
+    NumberParsingNote { invalid_suffix: &'src str },
+    EscapeSequenceConfusion(EscapeSequenceConfusion),
+}
+
+impl<'src> From<EscapeSequenceConfusion> for Note<'src> {
+    fn from(value: EscapeSequenceConfusion) -> Self {
+        Self::EscapeSequenceConfusion(value)
+    }
+}
+
+impl<'src> TreeDisplay<'src> for NodeWrapper<'src> {
     fn display(&self, internalizer: &Internalizer<'src>, indentation: String) -> String {
         let Some(ref node) = self.node else {
             return "None".to_owned();
@@ -72,14 +84,19 @@ impl<'src, J: Jump<'src>> TreeDisplay<'src> for NodeWrapper<'src, J> {
         use Node::*;
 
         match node {
-            Binding { lhs, rhs } => {
+            Binding { exprs } => {
                 format!(
-                    "= {{\n{}{}\n{}{} \n{}}}",
-                    next_indentation.clone(),
-                    lhs.display(internalizer, next_indentation.clone()),
-                    next_indentation.clone(),
-                    rhs.display(internalizer, next_indentation),
-                    indentation
+                    "{}{}",
+                    exprs.first().display(internalizer, indentation.clone()),
+                    exprs
+                        .iter()
+                        .skip(1)
+                        .map(|expr| format!(
+                            "\n{}= {}",
+                            indentation.clone(),
+                            expr.display(internalizer, format!("{}  ", indentation))
+                        ))
+                        .collect::<String>()
                 )
             }
             Literal { val } => format!(
@@ -92,21 +109,21 @@ impl<'src, J: Jump<'src>> TreeDisplay<'src> for NodeWrapper<'src, J> {
             ),
             Ident(id) => format!("Id  {}", internalizer.resolve(*id)),
             Lifetime(sym) => format!("Lifetime  {}", internalizer.resolve(*sym)),
-            Field(sym) => format!("Field  {}", internalizer.resolve(*sym)),
             Placeholder => "..".to_owned(),
             Quote(quote) => format!("Quote  \"{}\"", with_written_out_escape_sequences(quote)),
-            PrimitiveType(..) => todo!(),
+            Label { label, content } => format!(
+                "Label  {} {}",
+                internalizer.resolve(*label),
+                content.display(internalizer, indentation)
+            ),
+            PrimitiveType(ty) => format!("{}", ty.display(internalizer, indentation)),
             Unit => "()".to_owned(),
-            Binary {
-                op,
-                lhs: left,
-                rhs: right,
-            } => format!(
+            Binary { op, lhs, rhs } => format!(
                 "{op} {{\n{}{}\n{}{} \n{}}}",
                 next_indentation.clone(),
-                left.display(internalizer, next_indentation.clone()),
+                lhs.display(internalizer, next_indentation.clone()),
                 next_indentation.clone(),
-                right.display(internalizer, next_indentation),
+                rhs.display(internalizer, next_indentation),
                 indentation
             ),
             Unary { op, val } => format!(
@@ -154,25 +171,14 @@ impl<'src, J: Jump<'src>> TreeDisplay<'src> for NodeWrapper<'src, J> {
                     )
                 }
             }
-            ColonStruct(content) => {
-                if content.len() == 1 {
-                    content[0].display(internalizer, next_indentation.clone())
-                } else {
-                    let mut list = content.iter();
-                    list.next()
-                        .unwrap()
-                        .display(internalizer, indentation.clone() + "  ")
-                        + &list
-                            .map(|item| {
-                                format!(
-                                    "\n{}: {}",
-                                    indentation.clone(),
-                                    item.display(internalizer, indentation.clone() + "  ")
-                                )
-                            })
-                            .collect::<String>()
-                }
-            }
+            Contract { lhs, rhs } => format!(
+                ": {{\n{}{}\n{}{} \n{}}}",
+                next_indentation.clone(),
+                lhs.display(internalizer, next_indentation.clone()),
+                next_indentation.clone(),
+                rhs.display(internalizer, next_indentation),
+                indentation
+            ),
             Statements(content) => {
                 if content.len() == 1 {
                     content[0].display(internalizer, next_indentation.clone())
@@ -248,163 +254,101 @@ impl<'src, J: Jump<'src>> TreeDisplay<'src> for NodeWrapper<'src, J> {
                         &else_body.display(internalizer, indentation + "     "),
                     ))
             ),
-            Fields { val, fields } => format!(
-                "{}{}",
-                val.display(internalizer, indentation.clone()),
-                fields
-                    .iter()
-                    .map(|sym| format!(" . {}", internalizer.resolve(*sym)))
-                    .collect::<String>()
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Jump<'src> {
+    Continue,
+    Break { val: Option<Box<NodeBox<'src>>> },
+    Return { val: Option<Box<NodeBox<'src>>> },
+}
+
+impl<'src> TreeDisplay<'src> for Jump<'src> {
+    fn display(&self, internalizer: &Internalizer<'src>, indentation: String) -> String {
+        use Jump::*;
+        match self {
+            Continue => format!("continue"),
+            Break { val } => format!(
+                "exit{}",
+                val.as_ref().map_or_else(
+                    || "".to_owned(),
+                    |val| format!(" {}", val.display(internalizer, indentation))
+                )
+            ),
+            Return { val } => format!(
+                "return{}",
+                val.as_ref().map_or_else(
+                    || "".to_owned(),
+                    |val| format!(" {}", val.display(internalizer, indentation))
+                )
             ),
         }
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Note<'src> {
-    NumberParsingNote { invalid_suffix: &'src str },
-    EscapeSequenceConfusion(EscapeSequenceConfusion),
-}
-
-impl<'src> From<&'src str> for Note<'src> {
-    fn from(value: &'src str) -> Self {
-        Self::NumberParsingNote {
-            invalid_suffix: value,
-        }
-    }
-}
-impl<'src> From<EscapeSequenceConfusion> for Note<'src> {
-    fn from(value: EscapeSequenceConfusion) -> Self {
-        Self::EscapeSequenceConfusion(value)
-    }
-}
-
-pub trait Jump<'src>: Debug + PartialEq + Eq + TreeDisplay<'src> {
-    const NONE: Self;
-}
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct NoJump {}
-
-impl<'src> Jump<'src> for NoJump {
-    const NONE: Self = NoJump {};
+pub struct Path<'src> {
+    pub node: Option<NodeBox<'src>>,
+    pub jump: Option<Jump<'src>>,
 }
 
-impl<'src> TreeDisplay<'src> for NoJump {
-    fn display(&self, _: &Internalizer<'src>, _: String) -> String {
-        "".to_owned()
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum ReturnJump<'src> {
-    Return { val: Box<Path<'src, Self>> },
-    None,
-}
-
-impl<'src> Jump<'src> for ReturnJump<'src> {
-    const NONE: Self = Self::None;
-}
-
-impl<'src> TreeDisplay<'src> for ReturnJump<'src> {
-    fn display(&self, internalizer: &Internalizer<'src>, indentation: String) -> String {
-        use ReturnJump::*;
-        match self {
-            Return { val } => format!("return {}", val.content.display(internalizer, indentation)),
-            None => format!(""),
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum LoopJump<'src> {
-    Continue {
-        layers: usize,
-    },
-    Break {
-        layers: usize,
-        val: Box<Path<'src, Self>>,
-    },
-    None,
-}
-
-impl<'src> Jump<'src> for LoopJump<'src> {
-    const NONE: Self = Self::None;
-}
-
-impl<'src> TreeDisplay<'src> for LoopJump<'src> {
-    fn display(&self, internalizer: &Internalizer<'src>, indentation: String) -> String {
-        use LoopJump::*;
-        match self {
-            Continue { layers } => format!("continue * {layers}"),
-            Break { layers, val } => format!(
-                "exit * {} {}",
-                layers,
-                val.content.display(internalizer, indentation)
-            ),
-            None => format!(""),
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum EveryJump<'src> {
-    Continue {
-        layers: usize,
-    },
-    Break {
-        layers: usize,
-        val: Box<Path<'src, Self>>,
-    },
-    Return {
-        val: Box<Path<'src, Self>>,
-    },
-    None,
-}
-
-impl<'src> Jump<'src> for EveryJump<'src> {
-    const NONE: Self = Self::None;
-}
-
-impl<'src> TreeDisplay<'src> for EveryJump<'src> {
-    fn display(&self, internalizer: &Internalizer<'src>, indentation: String) -> String {
-        use EveryJump::*;
-        match self {
-            Continue { layers } => format!("continue * {layers}"),
-            Break { layers, val } => format!(
-                "exit * {} {}",
-                layers,
-                val.content.display(internalizer, indentation)
-            ),
-            Return { val } => format!("return {}", val.content.display(internalizer, indentation)),
-            None => format!(""),
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct Path<'src, J: Jump<'src>> {
-    pub content: NodeBox<'src, J>,
-    pub jump: J,
-}
-
-impl<'src, J: Jump<'src>> Path<'src, J> {
+impl<'src> Path<'src> {
     #[inline]
-    pub fn new(content: NodeBox<'src, J>) -> Self {
+    pub const fn is_none(&self) -> bool {
+        self.node.is_none() && self.jump.is_none()
+    }
+
+    #[inline]
+    pub const fn is_some(&self) -> bool {
+        !self.is_none()
+    }
+
+    pub fn none() -> Self {
         Self {
-            content,
-            jump: J::NONE,
+            node: None,
+            jump: None,
+        }
+    }
+    pub const fn node(node: NodeBox<'src>) -> Self {
+        Self {
+            node: Some(node),
+            jump: None,
+        }
+    }
+    pub fn jump(jump: Jump<'src>) -> Self {
+        Self {
+            node: None,
+            jump: Some(jump),
         }
     }
 }
 
-impl<'src, J: Jump<'src> + TreeDisplay<'src>> TreeDisplay<'src> for Path<'src, J> {
+impl<'src> TreeDisplay<'src> for Path<'src> {
     fn display(&self, internalizer: &Internalizer<'src>, indentation: String) -> String {
-        self.content.display(internalizer, indentation.clone())
-            + &format!(
-                "\n{}{}",
-                indentation.clone(),
-                self.jump.display(internalizer, indentation)
-            )
+        match self.node.as_ref() {
+            Some(node) => {
+                node.display(internalizer, indentation.clone())
+                    + &self.jump.as_ref().map_or_else(
+                        || "".to_owned(),
+                        |jump| {
+                            format!(
+                                "\n{}{}",
+                                indentation.clone(),
+                                jump.display(internalizer, indentation)
+                            )
+                        },
+                    )
+            }
+            None => format!(
+                "{}",
+                self.jump.as_ref().map_or_else(
+                    || "".to_owned(),
+                    |jump| jump.display(internalizer, indentation)
+                )
+            ),
+        }
     }
 }
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -431,96 +375,91 @@ impl Bracket {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum Node<'src, J: Jump<'src>> {
+pub enum Node<'src> {
     // control flow structures
     Loop {
-        condition: NodeBox<'src, J>,
-        then_body: Path<'src, EveryJump<'src>>,
-        else_body: Option<Path<'src, EveryJump<'src>>>,
+        condition: NodeBox<'src>,
+        then_body: Path<'src>,
+        else_body: Option<Path<'src>>,
     }, // loop condition then_body (else else_body)
 
     If {
-        condition: NodeBox<'src, J>,
-        then_body: Path<'src, J>,
-        else_body: Option<Path<'src, J>>,
+        condition: NodeBox<'src>,
+        then_body: Path<'src>,
+        else_body: Option<Path<'src>>,
     }, // loop condition then_body (else else_body)
 
     Binding {
-        lhs: NodeBox<'src, J>,
-        rhs: NodeBox<'src, J>,
+        exprs: comp::Vec<NodeBox<'src>, 2>,
     },
+    Contract {
+        lhs: NodeBox<'src>,
+        rhs: NodeBox<'src>,
+    }, // a: type
+
     // single values
     Literal {
         val: BigUint,
     }, // (0(b/s/o/d/x))N(.N)((u/i/f/c)(0(b/s/o/d/x))N)(i)
     Quote(String), // "..."
     Placeholder,   // ..
+    Label {
+        label: Symbol<'src>,
+        content: NodeBox<'src>,
+    },
 
     // identifiers
-    Ident(Symbol<'src>),          // x
-    Lifetime(Symbol<'src>),       // 'x
-    Field(Symbol<'src>),          // .x
-    PrimitiveType(Type<'src, J>), // u32, i32, c32, f32, ...
+    Ident(Symbol<'src>),    // x
+    Lifetime(Symbol<'src>), // 'x
+
+    PrimitiveType(Type<'src>), // u32, i32, c32, f32, ...
     Unit,
 
     // multiple values
-    List(comp::Vec<NodeBox<'src, J>, 2>), // a, b, c, d, ...
-    ColonStruct(comp::Vec<NodeBox<'src, J>, 2>), // a : b : c : d
-    Statements(comp::Vec<NodeBox<'src, J>, 2>), // a b c d ...
+    List(comp::Vec<NodeBox<'src>, 2>),       // a, b, c, d, ...
+    Statements(comp::Vec<NodeBox<'src>, 2>), // a b c d ...
 
     // operations
     Binary {
         op: BinaryOp,
-        lhs: NodeBox<'src, J>,
-        rhs: NodeBox<'src, J>,
+        lhs: NodeBox<'src>,
+        rhs: NodeBox<'src>,
     }, // left op right
     Chain {
-        first: NodeBox<'src, J>,
-        additions: comp::Vec<(BinaryOp, NodeBox<'src, J>), 1>,
+        first: NodeBox<'src>,
+        additions: comp::Vec<(BinaryOp, NodeBox<'src>), 1>,
     }, // first op additions[0].0 additions[0].1
     Unary {
         op: UnaryOp,
-        val: NodeBox<'src, J>,
+        val: NodeBox<'src>,
     }, // op operand
 
     Ref {
         lifetime: Option<Symbol<'src>>,
-        val: NodeBox<'src, J>,
-    },
-    Fields {
-        val: NodeBox<'src, J>,
-        fields: comp::Vec<Symbol<'src>, 1>,
+        val: NodeBox<'src>,
     },
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct NodeBox<'a, J: Jump<'a>> {
-    ptr: bumpalo::boxed::Box<'a, NodeWrapper<'a, J>>,
+pub struct NodeBox<'a> {
+    ptr: bumpalo::boxed::Box<'a, NodeWrapper<'a>>,
 }
 
-impl<'a, J: Jump<'a>> NodeBox<'a, J> {
+impl<'a> NodeBox<'a> {
     #[inline]
-    pub fn new(ptr: BumpBox<'a, NodeWrapper<'a, J>>) -> Self {
+    pub fn new(ptr: BumpBox<'a, NodeWrapper<'a>>) -> Self {
         Self { ptr }
     }
-    #[inline]
-    pub fn clone(&mut self) -> Self {
-        unsafe {
-            NodeBox::new(BumpBox::from_raw(
-                self.ptr.as_mut() as *mut NodeWrapper<'a, J>
-            ))
-        }
-    }
 }
 
-impl<'src, J: Jump<'src>> Deref for NodeBox<'src, J> {
-    type Target = NodeWrapper<'src, J>;
+impl<'src> Deref for NodeBox<'src> {
+    type Target = NodeWrapper<'src>;
     fn deref(&self) -> &Self::Target {
         self.ptr.as_ref()
     }
 }
 
-impl<'src, J: Jump<'src>> DerefMut for NodeBox<'src, J> {
+impl<'src> DerefMut for NodeBox<'src> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.ptr.as_mut()
     }

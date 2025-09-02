@@ -1,7 +1,11 @@
 use bumpalo::Bump;
 
 use super::files::*;
-use crate::{error::CliError, format_time, parser::parse, tree::TreeDisplay};
+use crate::{
+    error::CliError,
+    format_time,
+    parser::{parse, tree::TreeDisplay},
+};
 use std::{
     ffi::OsString,
     fs::*,

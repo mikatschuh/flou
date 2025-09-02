@@ -1,20 +1,20 @@
+use crate::parser::{
+    tokenizing::token::{Token, TokenKind},
+    tree::Jump,
+    Parser,
+};
 #[allow(unused)]
 use crate::{
     error::*,
     format_error_quote_arg,
-    parser::binary_op::BinaryOp,
-    tree::{Node, NodeBox, NodeWrapper, Note},
+    parser::{
+        binary_op::BinaryOp,
+        tree::{Node, NodeBox, NodeWrapper, Note},
+    },
     typing::{
         NumberKind::{self, *},
         NumberType, Type,
     },
-};
-use crate::{
-    parser::{
-        tokenizing::token::{Token, TokenKind},
-        Parser, StackData,
-    },
-    tree::Jump,
 };
 use num::BigUint;
 
@@ -49,43 +49,20 @@ impl<'src> Parser<'src> {
     /// ```
     /// If instead of a base specifier, a digit is given, its assumed that the leading zero
     /// was just a typo. The number will be continued regulary.
-    pub(super) fn convert_to_num_if_possible<'caller, J: Jump<'src>>(
+    pub(super) fn try_to_make_number<'caller>(
         &mut self,
         span: Span,
         ident: &'src str,
-        flags: StackData<'src, 'caller, J>,
-    ) -> NodeBox<'src, J> {
-        debug_assert_ne!(ident, "");
-        debug_assert_ne!(ident, "..");
-
-        self.try_to_make_number(span, ident, flags)
-            .unwrap_or_else(|e| match e {
-                Some(suffix) => {
-                    let sym = self.internalizer.get(ident);
-                    self.make_node(
-                        NodeWrapper::new(span)
-                            .with_node(Node::Ident(sym))
-                            .with_note(suffix.into()),
-                    )
-                }
-                None => {
-                    let sym = self.internalizer.get(ident);
-                    self.make_node(NodeWrapper::new(span).with_node(Node::Ident(sym)))
-                }
-            })
-    }
-
-    fn try_to_make_number<'caller, J: Jump<'src>>(
-        &mut self,
-        span: Span,
-        ident: &'src str,
-        flags: StackData<'src, 'caller, J>,
-    ) -> Result<NodeBox<'src, J>, Option<&'src str>> {
+        jump: &mut Option<Jump<'src>>,
+    ) -> Result<NodeBox<'src>, Option<&'src str>> {
         let divisor_equation = |base, digits_after_dot| -> BigUint {
             (base as u32).pow(digits_after_dot as u32).into()
         };
 
         let mut num = ident.as_bytes();
+        if num[0] == b'_' || num[num.len() - 1] == b'_' {
+            return Err(None);
+        }
 
         let (base, mut number) = parse_number(&mut num);
 
@@ -101,6 +78,7 @@ impl<'src> Parser<'src> {
         } else {
             None
         };
+
         let Some(number) = number else {
             return Err(None);
         };
@@ -116,7 +94,7 @@ impl<'src> Parser<'src> {
                 });
                 num = &[]
             }
-            if let Some(exp) = self.parse_expr(BinaryOp::Pow.binding_pow(), flags) {
+            if let Some(exp) = self.parse_expr(BinaryOp::Pow.binding_pow(), jump) {
                 Some(exp)
             } else {
                 return Err(Some(unsafe { str::from_utf8_unchecked(suffix) }));

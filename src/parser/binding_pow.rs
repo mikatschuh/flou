@@ -1,34 +1,32 @@
-use crate::{
-    parser::{
-        binary_op::BinaryOp,
-        tokenizing::token::{Token, TokenKind},
-        unary_op::UnaryOp,
-    },
+use crate::parser::{
+    binary_op::BinaryOp,
+    keyword::Keyword,
+    tokenizing::token::{Token, TokenKind},
     tree::Bracket,
+    unary_op::UnaryOp,
 };
 
 use Bracket::*;
+use Keyword::*;
 use TokenKind::*;
 
 pub(super) const STATEMENT: u8 = 1;
-pub(super) const COLON: u8 = 3;
-pub(super) const BINDING: u8 = 5;
+pub(super) const COLON: u8 = 4;
+pub(super) const BINDING: u8 = 3;
 pub(super) const SINGLE_VALUE: u8 = 124;
 
 impl<'src> Token<'src> {
-    pub const fn is_terminator(self) -> bool {
-        matches!(self.kind, Closed(..) | Comma)
-    }
-
     pub const fn binding_pow(self) -> Option<u8> {
         Some(match self.kind {
-            Closed(..) | Comma => return None,
+            Closed(..) | Comma | Keyword(Else | Continue | Break | Return) => return None,
 
-            Not | NotNot | Tick | RightArrow | Ident | Quote | Keyword(..) | Open(Curly) => 0,
+            Not | NotNot | Tick | RightArrow | Ident | Quote | Keyword(If | Loop) | Open(Curly) => {
+                0
+            }
 
-            Colon => 2,
+            Equal | EqualPipe => 2,
 
-            Equal | EqualPipe => 4,
+            Colon => 5,
 
             ColonEqual | PipeEqual | NotPipeEqual | RightPipeEqual | NotRightPipeEqual
             | AndEqual | NotAndEqual | PlusEqual | DashEqual | StarEqual | SlashEqual

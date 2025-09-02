@@ -1,7 +1,6 @@
 use crate::{
     error::Span,
-    parser::{binary_op::BinaryOp, keyword::Keyword, unary_op::UnaryOp},
-    tree::Bracket,
+    parser::{binary_op::BinaryOp, keyword::Keyword, tree::Bracket, unary_op::UnaryOp},
 };
 use colored::{ColoredString, Colorize};
 use num::Integer;

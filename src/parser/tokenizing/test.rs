@@ -1,7 +1,7 @@
 #[test]
 fn test() {
     use super::token::TokenKind::*;
-    
+
     use crate::{
         error::{Errors, Span},
         parser::tokenizing::{token::Token, Tokenizer},
@@ -11,8 +11,7 @@ fn test() {
 
     let errors = Rc::new(Errors::empty(Path::new("example.flou")));
     assert_eq!(
-        Tokenizer::new("+++*===!>|\nx\"some string\"+1 v", errors.clone())
-            .collect::<Vec<_>>(),
+        Tokenizer::new("+++*===!>|\nx\"some string\"+1 v", errors.clone()).collect::<Vec<_>>(),
         vec![
             Token::new(Span::at(1, 1, 2, 1), "++", PlusPlus),
             Token::new(Span::at(3, 1, 3, 1), "+", Plus),
@@ -28,13 +27,11 @@ fn test() {
     );
     dbg!(1);
     assert_eq!(
-        Tokenizer::new("! ! !! ! =", errors.clone())
-            .collect::<Vec<_>>(),
+        Tokenizer::new("!!!!!=", errors.clone()).collect::<Vec<_>>(),
         vec![Token::new(Span::at(1, 1, 10, 1), "! ! !! ! =", NotEqual)]
     );
     assert_eq!(
-        Tokenizer::new("! ! !! !! >||, !!+", errors.clone())
-            .collect::<Vec<_>>(),
+        Tokenizer::new("!!!!!!>||, !!+", errors.clone()).collect::<Vec<_>>(),
         vec![
             Token::new(Span::at(1, 1, 13, 1), "! ! !! !! >||", RightPipePipe),
             Token::new(Span::at(14, 1, 14, 1), ",", Comma),
@@ -43,8 +40,7 @@ fn test() {
         ]
     );
     assert_eq!(
-        Tokenizer::new("a + b //!\n c", errors.clone())
-            .collect::<Vec<_>>(),
+        Tokenizer::new("a + b //!\n c", errors.clone()).collect::<Vec<_>>(),
         vec![
             Token::new(Span::at(1, 1, 1, 1), "a", Ident),
             Token::new(Span::at(3, 1, 3, 1), "+", Plus),

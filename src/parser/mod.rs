@@ -1,18 +1,16 @@
-use std::marker::PhantomData;
-
 use crate::{
     comp,
     error::{ErrorCode, Errors, Position, Span},
     parser::intern::{Internalizer, Symbol},
-    tree::{Bracket, EveryJump, Jump, NoJump, Node, NodeBox, NodeWrapper, Path},
     typing::TypeParser,
-    utilities::{Rc, Ref},
+    utilities::Rc,
 };
 use bumpalo::{boxed::Box as BumpBox, Bump};
 use tokenizing::{
     token::{Token, TokenKind},
     Tokenizer,
 };
+use tree::{Bracket, Jump, Node, NodeBox, NodeWrapper, Path};
 
 pub mod binary_op;
 mod binding_pow;
@@ -24,17 +22,14 @@ mod rules;
 #[cfg(test)]
 mod test;
 pub mod tokenizing;
+pub mod tree;
 pub mod unary_op;
 
 pub fn parse<'src>(
     text: &'src str,
     arena: &'src Bump,
     path: &'static std::path::Path,
-) -> (
-    NodeBox<'src, NoJump>,
-    Rc<Internalizer<'src>>,
-    Rc<Errors<'src>>,
-) {
+) -> (NodeBox<'src>, Rc<Internalizer<'src>>, Rc<Errors<'src>>) {
     let errors = Rc::new(Errors::empty(path));
     let internalizer = Rc::new(Internalizer::new());
     let root = Parser::new(
@@ -51,16 +46,12 @@ pub fn parse<'src>(
 struct Parser<'src> {
     tokenizer: Tokenizer<'src>,
     errors: Rc<Errors<'src>>,
+    brackets: usize,
+
     internalizer: Rc<Internalizer<'src>>,
     type_parser: TypeParser,
     arena: &'src Bump,
-
-    dash_slot: Option<Ref<'src, NodeBox<'src, EveryJump<'src>>>>,
-}
-
-struct Tree<'src, J: Jump<'src>> {
-    node: NodeBox<'src, J>,
-    jump: J,
+    /*dash_slot: Option<Ref<'src, NodeBox<'src>>>,*/
 }
 
 impl<'src> Parser<'src> {
@@ -74,34 +65,30 @@ impl<'src> Parser<'src> {
         Self {
             tokenizer,
             errors,
+            brackets: 0,
+
             internalizer,
             type_parser: TypeParser::new(),
             arena,
-
-            dash_slot: None,
         }
     }
 
     #[inline]
-    fn make_node<J: Jump<'src>>(&self, node: NodeWrapper<'src, J>) -> NodeBox<'src, J> {
+    fn make_node(&self, node: NodeWrapper<'src>) -> NodeBox<'src> {
         NodeBox::new(BumpBox::new_in(node, self.arena))
     }
 
     #[inline]
-    fn parse(mut self) -> NodeBox<'src, NoJump> {
-        let root = self.pop_path(Position::beginning(), 0, None).content;
-        root
+    fn parse(mut self) -> NodeBox<'src> {
+        let root = self.parse_path(0).node;
+        self.expect_node(root, Position::beginning())
     }
 
-    fn parse_expr<'caller, J: Jump<'src>>(
-        &mut self,
-        min_bp: u8,
-        flags: StackData<'src, 'caller, J>,
-    ) -> Option<NodeBox<'src, J>> {
-        let mut lhs = self.tokenizer.next()?.nud(self, min_bp, flags)?;
+    fn parse_expr(&mut self, min_bp: u8, jump: &mut Option<Jump<'src>>) -> Option<NodeBox<'src>> {
+        let mut lhs = self.tokenizer.next()?.nud(self, min_bp, jump)?;
 
         while let Some(tok) = self.tokenizer.peek() {
-            if flags.in_brackets.is_none() {
+            if self.brackets == 0 {
                 if let TokenKind::Closed(closed) = tok.kind {
                     let Token { span, .. } = self.tokenizer.next().unwrap();
                     self.errors
@@ -116,54 +103,63 @@ impl<'src> Parser<'src> {
             if bp < min_bp {
                 return Some(lhs);
             }
-            lhs = self.tokenizer.next().unwrap().led(lhs, self, flags);
+            let tok = self
+                .tokenizer
+                .next()
+                .expect("the token-stream was peeked before");
+            lhs = match tok.led(lhs, self, jump) {
+                Ok(new_lhs) => new_lhs,
+                Err(old_lhs) => {
+                    self.tokenizer.buffer(tok);
+
+                    if let Some(rhs) = self.parse_expr(binding_pow::STATEMENT, jump) {
+                        let mut chain = comp::Vec::new([old_lhs, rhs]);
+                        while let Some(rhs) = self.parse_expr(binding_pow::STATEMENT, jump) {
+                            chain.push(rhs)
+                        }
+                        self.make_node(
+                            NodeWrapper::new(chain.first().span - chain.last().span)
+                                .with_node(Node::Statements(chain)),
+                        )
+                    } else {
+                        old_lhs
+                    }
+                }
+            };
         }
         // EOF
         Some(lhs)
     }
 
-    fn parse_path<J: Jump<'src>>(
+    #[inline]
+    fn pop_expr(
         &mut self,
-        pos: Position,
         min_bp: u8,
-        in_brackets: Option<InBrackets>,
-    ) -> Path<'src, J> {
-        let mut jump = J::NONE;
+        jump: &mut Option<Jump<'src>>,
+        pos: Position,
+    ) -> NodeBox<'src> {
+        let node = self.parse_expr(min_bp, jump);
+        self.expect_node(node, pos)
+    }
+
+    #[inline]
+    fn parse_path(&mut self, min_bp: u8) -> Path<'src> {
+        let mut jump: Option<Jump> = None;
+        let node = self.parse_expr(min_bp, &mut jump);
+        Path { node, jump }
+    }
+
+    #[inline]
+    fn pop_path(&mut self, min_bp: u8, pos: Position) -> Path<'src> {
+        let mut jump: Option<Jump> = None;
+        let node = self.pop_expr(min_bp, &mut jump, pos);
         Path {
-            content: self
-                .parse_expr(
-                    min_bp,
-                    StackData::new(Ref::new(&mut jump)).in_brackets_if(in_brackets),
-                )
-                .unwrap_or_else(|| self.make_node(NodeWrapper::new(pos.into()))),
+            node: Some(node),
             jump,
         }
     }
 
-    fn pop_path<J: Jump<'src>>(
-        &mut self,
-        pos: Position,
-        min_bp: u8,
-        in_brackets: Option<InBrackets>,
-    ) -> Path<'src, J> {
-        let mut jump = J::NONE;
-        Path {
-            content: self.pop_expr(
-                pos,
-                min_bp,
-                StackData::new(Ref::new(&mut jump)).in_brackets_if(in_brackets),
-            ),
-            jump,
-        }
-    }
-
-    fn handle_closed_bracket<'caller, J: Jump<'src>>(
-        &mut self,
-        pos: Position,
-        open_pos: Span,
-        open_bracket: Bracket,
-        flags: StackData<'src, 'caller, J>,
-    ) -> Span {
+    fn handle_closed_bracket(&mut self, pos: Position, open_bracket: Bracket) -> Span {
         use TokenKind::*;
         if let Some(Token {
             kind: Closed(closed_bracket),
@@ -181,6 +177,7 @@ impl<'src> Parser<'src> {
                     },
                 );
             }
+            /*
             if let Some(dash_slot) = self.dash_slot {
                 let mut pos = span.end + 1;
                 if let Some(tok) = self.tokenizer.next_if(|tok| matches!(tok.kind, Dash(..))) {
@@ -189,43 +186,51 @@ impl<'src> Parser<'src> {
 
                 if !self.tokenizer.next_is(|tok| matches!(tok.kind, Closed(..))) {
                     self.dash_slot = None;
-                    let node = self.pop_expr(pos, binding_pow::SINGLE_VALUE, flags);
+                    let node = self
+                        .parse_expr(binding_pow::SINGLE_VALUE)
+                        .unwrap_node(self, pos);
                     dash_slot.write(node);
                 }
-            }
+            }*/
             span
         } else {
-            let mut left_over_tokens = self
-                .tokenizer
-                .consume_while(|tok| !matches!(tok.kind, TokenKind::Closed(..)));
+            let mut left_over_tokens = self.tokenizer.consume_while(
+                |tok| !matches!(tok.kind, TokenKind::Closed(bracket) if bracket == open_bracket),
+            );
 
-            if let Some(tok) = left_over_tokens.next() {
+            if let Some(first) = left_over_tokens.next() {
                 self.errors.push(
-                    tok.span.start
+                    first.span.start
                         - left_over_tokens
                             .last()
-                            .map_or(tok.span.end, |last| last.span.end),
+                            .map_or(first.span.end, |last| last.span.end),
                     ErrorCode::ExpectedClosedBracket {
                         opened: open_bracket,
                     },
-                )
+                );
+            } else {
+                self.errors.push(
+                    pos.into(),
+                    ErrorCode::NoClosedBracket {
+                        opened: open_bracket,
+                    },
+                );
             }
 
-            self.errors.push(
-                pos.into(),
-                ErrorCode::NoClosedBracket {
-                    opened: open_bracket,
-                },
-            );
+            if let Some(Token { span, .. }) = self.tokenizer.next() {
+                return span;
+            }
             pos.into()
         }
     }
 
     fn clean_up_after_jump(&mut self) {
-        if let Some(Token { span, .. }) = self.tokenizer.next_if(|tok| !tok.is_terminator()) {
+        if let Some(Token { span, .. }) = self.tokenizer.next_if(|tok| !tok.binding_pow().is_none())
+        {
             self.errors.push(span, ErrorCode::CodeAfterJump);
         }
-        self.tokenizer.consume_while(|tok| !tok.is_terminator());
+        self.tokenizer
+            .consume_while(|tok| !tok.binding_pow().is_none());
     }
 
     /// Pops an identifier if the next token is one. If not it generates the correct error message
@@ -242,90 +247,47 @@ impl<'src> Parser<'src> {
         }
     }
 
-    /// Parses a value, if no value can be generated it makes an error message and returns an
-    /// empty node.
-    fn pop_expr<'caller, J: Jump<'src>>(
+    fn parse_list(&mut self, lhs: NodeBox<'src>, jump: &mut Option<Jump<'src>>) -> NodeBox<'src> {
+        let Some(Token { span, .. }) = self.tokenizer.next_if(|tok| tok.kind == TokenKind::Comma)
+        else {
+            return lhs;
+        };
+        self.parse_dynamic_arg_op(
+            lhs,
+            TokenKind::Comma,
+            0,
+            |exprs| Node::List(exprs),
+            span.end + 1,
+            jump,
+        )
+    }
+
+    fn parse_dynamic_arg_op(
         &mut self,
+        lhs: NodeBox<'src>,
+        own_tok: TokenKind,
+        right_bp: u8,
+        nud: impl Fn(comp::Vec<NodeBox<'src>, 2>) -> Node<'src>,
         pos: Position,
-        min_bp: u8,
-        flags: StackData<'src, 'caller, J>,
-    ) -> NodeBox<'src, J> {
-        self.parse_expr(min_bp, flags).unwrap_or_else(|| {
+        jump: &mut Option<Jump<'src>>,
+    ) -> NodeBox<'src> {
+        let rhs = self.pop_expr(right_bp, jump, pos);
+        let mut exprs = comp::Vec::new([lhs, rhs]);
+
+        while let Some(Token { span, .. }) = self.tokenizer.next_if(|tok| tok.kind == own_tok) {
+            let next = self.pop_expr(right_bp, jump, span.end + 1);
+            exprs.push(next)
+        }
+
+        self.make_node(
+            NodeWrapper::new(exprs.first().span - exprs.last().span).with_node(nud(exprs)),
+        )
+    }
+
+    fn expect_node(&mut self, node: Option<NodeBox<'src>>, pos: Position) -> NodeBox<'src> {
+        node.unwrap_or_else(|| {
             self.errors.push(pos.into(), ErrorCode::ExpectedValue);
             self.make_node(NodeWrapper::new(pos.into()))
         })
-    }
-
-    fn parse_list<'caller, J: Jump<'src>>(
-        &mut self,
-        first: &mut NodeBox<'src, J>,
-        flags: StackData<'src, 'caller, J>,
-    ) {
-        let Some(Token { span, .. }) = self.tokenizer.next_if(|tok| tok.kind == TokenKind::Comma)
-        else {
-            return;
-        };
-        let mut args = comp::Vec::new([first.clone(), self.pop_expr(span.end + 1, 0, flags)]);
-
-        while let Some(Token { span, .. }) =
-            self.tokenizer.next_if(|tok| tok.kind == TokenKind::Comma)
-        {
-            args.push(self.pop_expr(span.end + 1, 0, flags))
-        }
-
-        *first = self
-            .make_node(NodeWrapper::new(first.span - args.last().span).with_node(Node::List(args)));
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum InBrackets {
-    Container,
-    Application,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct StackData<'src, 'caller, J: Jump<'src>> {
-    pub in_brackets: Option<InBrackets>,
-    pub loc: Location<'src, 'caller, J>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Location<'src, 'caller, J: Jump<'src>> {
-    Path(PhantomData<&'src ()>, &'caller mut J),
-    FuncArg,
-}
-
-impl<'src, 'caller, J: Jump<'src>> StackData<'src, 'caller, J> {
-    #[inline]
-    fn new(jump: Ref<'caller, J>) -> Self {
-        Self {
-            in_brackets: None,
-            loc: Location::Path(PhantomData::default(), jump),
-        }
-    }
-
-    #[inline]
-    fn in_brackets(mut self, bracket: InBrackets) -> Self {
-        self.in_brackets = Some(bracket);
-        self
-    }
-
-    #[inline]
-    fn in_brackets_if(mut self, bracket: Option<InBrackets>) -> Self {
-        self.in_brackets = bracket;
-        self
-    }
-
-    #[inline]
-    fn outside_of_brackets(mut self) -> Self {
-        self.in_brackets = None;
-        self
-    }
-
-    #[inline]
-    fn location(mut self, loc: Location<'src, 'caller, J>) -> Self {
-        self.loc = loc;
-        self
     }
 }
