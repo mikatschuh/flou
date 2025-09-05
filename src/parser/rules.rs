@@ -3,7 +3,7 @@ use crate::{
     error::ErrorCode,
     parser::{
         binary_op::BinaryOp,
-        binding_pow,
+        binding_pow::{self, PATH},
         keyword::Keyword,
         tokenizing::{
             resolve_escape_sequences,
@@ -76,13 +76,13 @@ impl<'src> Token<'src> {
                 use Keyword::*;
                 match keyword {
                     If | Loop => {
-                        let condition = state.pop_expr(binding_pow::STATEMENT, self.span.end);
+                        let condition = state.pop_expr(binding_pow::PATH, self.span.end);
 
-                        let then_body = state.pop_path(4, condition.span.end);
+                        let then_body = state.pop_path(condition.span.end);
                         let else_body = if let Some(Token { span, .. }) =
                             state.tokenizer.next_if(|x| x.kind == Keyword(Else))
                         {
-                            Some(state.pop_path(4, span.end))
+                            Some(state.pop_path(span.end))
                         } else {
                             None
                         };
@@ -100,63 +100,38 @@ impl<'src> Token<'src> {
                             }
                         }))
                     }
-                    Proc => match state.parse_return() {
-                        None => {
-                            let convention_or_body = state.pop_expr(1, self.span.end);
-                            match state.parse_return() {
-                                None => {
-                                    let convention = convention_or_body;
-                                    let body = state.pop_expr(1, self.span.end);
-                                    if let Some(jump) = state.parse_return() {
-                                        state.make_node(NodeWrapper::new(self.span).with_node(
-                                            Node::Proc {
-                                                convention: Some(convention),
-                                                body: Path {
-                                                    node: Some(body),
-                                                    jump: Some(jump),
-                                                },
-                                            },
-                                        ))
-                                    } else {
-                                        state
-                                            .errors
-                                            .push(body.span.end(), ErrorCode::ExpectedReturn);
-                                        state.make_node(NodeWrapper::new(self.span).with_node(
-                                            Node::Proc {
-                                                convention: Some(convention),
-                                                body: Path {
-                                                    node: Some(body),
-                                                    jump: None,
-                                                },
-                                            },
-                                        ))
-                                    }
-                                }
-                                Some(jump) => state.make_node(
-                                    NodeWrapper::new(self.span).with_node(Node::Proc {
-                                        convention: None,
-                                        body: Path {
-                                            node: Some(convention_or_body),
-                                            jump: Some(jump),
-                                        },
-                                    }),
-                                ),
-                            }
-                        }
-                        Some(jump) => {
-                            state.make_node(NodeWrapper::new(self.span).with_node(Node::Proc {
-                                convention: None,
-                                body: Path {
-                                    node: None,
-                                    jump: Some(jump),
+                    Proc => {
+                        let calling_convention = state.parse_expr(binding_pow::PATH);
+                        let body = state.parse_expr(binding_pow::PATH);
+                        let span = body
+                            .as_ref()
+                            .map(|body| body.span)
+                            .unwrap_or(
+                                calling_convention
+                                    .as_ref()
+                                    .map(|calling_convention| calling_convention.span)
+                                    .unwrap_or(self.span),
+                            )
+                            .end();
+                        let Some(jump) = state.parse_return() else {
+                            state.errors.push(span, ErrorCode::ExpectedReturn);
+                            return Some(state.make_node(NodeWrapper::new(span).with_node(
+                                Node::Proc {
+                                    convention: calling_convention,
+                                    body: Path {
+                                        node: body,
+                                        jump: None,
+                                    },
                                 },
-                            }))
-                        }
-                    },
-                    Else => {
-                        state.errors.push(self.span, ErrorCode::LonelyElse);
-                        state.pop_expr(min_bp, self.span.end); // consume else body - could lead to better error messages
-                        state.parse_expr(min_bp)?
+                            )));
+                        };
+                        state.make_node(NodeWrapper::new(self.span).with_node(Node::Proc {
+                            convention: calling_convention,
+                            body: Path {
+                                node: body,
+                                jump: Some(jump),
+                            },
+                        }))
                     }
                     _ => {
                         state.tokenizer.buffer(self);
@@ -198,16 +173,6 @@ impl<'src> Token<'src> {
                 let end = state.handle_closed_bracket(self.span.end, own_bracket);
                 content.span = self.span - end;
                 content
-            }
-            Closed(..) if state.brackets > 0 => {
-                state.tokenizer.buffer(self);
-                return None;
-            }
-            Closed(bracket) => {
-                state
-                    .errors
-                    .push(self.span, ErrorCode::NoOpenedBracket { closed: bracket });
-                return None;
             }
             RightArrow => {
                 let val = state.pop_expr(min_bp, self.span.end);

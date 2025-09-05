@@ -222,11 +222,11 @@ impl<'src> TreeDisplay<'src> for NodeWrapper<'src> {
                 then_body,
                 else_body,
             } => format!(
-                "{} {}\n{}=> {}{}",
+                "{} {}\n{}while {}{}",
                 "loop",
                 condition.display(internalizer, indentation.clone() + "     "),
                 indentation.clone(),
-                then_body.display(internalizer, indentation.clone() + "   "),
+                then_body.display(internalizer, indentation.clone() + "      "),
                 else_body
                     .as_ref()
                     .map_or("".to_owned(), |else_body| format!(
@@ -240,11 +240,10 @@ impl<'src> TreeDisplay<'src> for NodeWrapper<'src> {
                 then_body,
                 else_body,
             } => format!(
-                "{} {}\n{}=> {}{}",
-                "if",
+                "if {}\n{}then {}{}",
                 condition.display(internalizer, indentation.clone() + "   "),
                 indentation.clone(),
-                then_body.display(internalizer, indentation.clone() + "   "),
+                then_body.display(internalizer, indentation.clone() + "     "),
                 else_body
                     .as_ref()
                     .map_or("".to_owned(), |else_body| format!(
@@ -269,37 +268,25 @@ impl<'src> TreeDisplay<'src> for NodeWrapper<'src> {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Jump<'src> {
-    Continue,
-    Break {
-        layers: usize,
-        val: Option<Box<NodeBox<'src>>>,
-    },
-    Return {
-        layers: usize,
-        val: Option<Box<NodeBox<'src>>>,
-    },
+    Continue { layers: usize },
+    Break { layers: usize, val: NodeBox<'src> },
+    Return { layers: usize, val: NodeBox<'src> },
 }
 
 impl<'src> TreeDisplay<'src> for Jump<'src> {
     fn display(&self, internalizer: &Internalizer<'src>, indentation: String) -> String {
         use Jump::*;
         match self {
-            Continue => format!("continue"),
+            Continue { layers } => format!("continue * {}", layers + 1),
             Break { layers, val } => format!(
                 "break * {}{}",
                 layers + 1,
-                val.as_ref().map_or_else(
-                    || "".to_owned(),
-                    |val| format!(" {}", val.display(internalizer, indentation))
-                )
+                format!(" {}", val.display(internalizer, indentation))
             ),
             Return { layers, val } => format!(
                 "return * {}{}",
                 layers + 1,
-                val.as_ref().map_or_else(
-                    || "".to_owned(),
-                    |val| format!(" {}", val.display(internalizer, indentation))
-                )
+                format!(" {}", val.display(internalizer, indentation))
             ),
         }
     }

@@ -23,6 +23,7 @@ pub mod intern;
 pub mod keyword;
 pub mod num;
 mod rules;
+pub mod symbol;
 #[cfg(test)]
 mod test;
 pub mod tokenizing;
@@ -141,8 +142,8 @@ impl<'src> Parser<'src> {
     }
 
     #[inline]
-    fn pop_path(&mut self, min_bp: BindingPow, pos: Position) -> Path<'src> {
-        let node = self.parse_expr(min_bp);
+    fn pop_path(&mut self, pos: Position) -> Path<'src> {
+        let node = self.parse_expr(binding_pow::PATH);
         let jump = self.parse_jump();
         let path = Path { node, jump };
         if path.is_none() {
@@ -241,28 +242,37 @@ impl<'src> Parser<'src> {
             Keyword::Continue => {
                 self.tokenizer.next();
 
-                Some(Jump::Continue)
+                Some(Jump::Continue {
+                    layers: self
+                        .tokenizer
+                        .consume_while(|tok| tok.kind == TokenKind::Keyword(Keyword::Break))
+                        .count(),
+                })
             }
             Keyword::Break => {
-                self.tokenizer.next();
+                let Token { span, .. } = self.tokenizer.next().unwrap();
+                let mut end = span.end;
 
                 Some(Jump::Break {
                     layers: self
                         .tokenizer
                         .consume_while(|tok| tok.kind == TokenKind::Keyword(Keyword::Break))
+                        .map(|tok| end = tok.span.end)
                         .count(),
-                    val: self.parse_expr(binding_pow::JUMP).map(Box::new),
+                    val: self.pop_expr(binding_pow::PATH, end),
                 })
             }
             Keyword::Return => {
-                self.tokenizer.next();
+                let Token { span, .. } = self.tokenizer.next().unwrap();
+                let mut end = span.end;
 
                 Some(Jump::Return {
                     layers: self
                         .tokenizer
                         .consume_while(|tok| tok.kind == TokenKind::Keyword(Keyword::Return))
+                        .map(|tok| end = tok.span.end)
                         .count(),
-                    val: self.parse_expr(binding_pow::JUMP).map(Box::new),
+                    val: self.pop_expr(binding_pow::PATH, end),
                 })
             }
             _ => None,
@@ -280,14 +290,16 @@ impl<'src> Parser<'src> {
         };
         match keyword {
             Keyword::Return => {
-                self.tokenizer.next();
+                let Token { span, .. } = self.tokenizer.next().unwrap();
+                let mut end = span.end;
 
                 Some(Jump::Return {
                     layers: self
                         .tokenizer
                         .consume_while(|tok| tok.kind == TokenKind::Keyword(Keyword::Return))
+                        .map(|tok| end = tok.span.end)
                         .count(),
-                    val: self.parse_expr(binding_pow::JUMP).map(Box::new),
+                    val: self.pop_expr(binding_pow::PATH, end),
                 })
             }
             _ => None,
