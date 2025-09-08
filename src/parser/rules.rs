@@ -164,24 +164,10 @@ impl<'src> Token<'src> {
                 }
             }
             Tick => {
-                let (ident_span, symbol) = state.next_identifier(self.span.end);
-                if let Some(tok) = state
-                    .tokenizer
-                    .next_if(|tok| matches!(tok.kind, RightArrow))
-                {
-                    let rhs = state.pop_expr(binding_pow::SINGLE_VALUE, tok.span.end);
-                    state.make_node(
-                        NodeWrapper::new(ident_span - rhs.span).with_node(Node::Ref {
-                            lifetime: Some(symbol),
-                            val: rhs,
-                        }),
-                    )
-                } else {
-                    state.make_node(
-                        NodeWrapper::new(self.span.start - ident_span)
-                            .with_node(Node::Lifetime(symbol)),
-                    )
-                }
+                let (ident_span, sym) = state.next_identifier(self.span.end);
+                state.make_node(
+                    NodeWrapper::new(self.span.start - ident_span).with_node(Node::Lifetime(sym)),
+                )
             }
             Open(own_bracket) => {
                 state.brackets += 1;
@@ -197,13 +183,6 @@ impl<'src> Token<'src> {
                 let end = state.handle_closed_bracket(self.span.end, own_bracket);
                 content.span = self.span - end;
                 content
-            }
-            RightArrow => {
-                let val = state.pop_expr(min_bp, self.span.end);
-                state.make_node(NodeWrapper::new(self.span).with_node(Node::Ref {
-                    lifetime: None,
-                    val,
-                }))
             }
             Plus | PlusPlus | DashDash => state.pop_expr(UnaryOp::Neg.binding_pow(), self.span.end),
             _ => match self.as_prefix() {
@@ -243,6 +222,13 @@ impl<'src> Token<'src> {
                     lhs,
                     rhs: content,
                 }))
+            }
+            Tick => {
+                let (ident_span, sym) = state.next_identifier(self.span.end);
+                state.make_node(
+                    NodeWrapper::new(lhs.span - ident_span)
+                        .with_node(Node::Lifetimed { sym, val: lhs }),
+                )
             }
             Equal => state.parse_dynamic_arg_op(
                 lhs,

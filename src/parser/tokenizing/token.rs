@@ -282,11 +282,13 @@ impl TokenKind {
 impl<'src> Token<'src> {
     pub fn as_prefix(self) -> Option<UnaryOp> {
         use UnaryOp::*;
-        match self.kind {
-            Dash => Some(Neg),
-            TokenKind::Not => Some(Not),
-            _ => None,
-        }
+        Some(match self.kind {
+            Dash => Neg,
+            TokenKind::Not => Not,
+            RightArrow => Ptr,
+            And => Ref,
+            _ => return None,
+        })
     }
 
     pub fn as_infix(self) -> Option<BinaryOp> {

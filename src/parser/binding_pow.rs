@@ -15,14 +15,13 @@ pub(super) const LABEL: BindingPow = 2;
 pub(super) const PATH: BindingPow = 2;
 pub(super) const COLON: BindingPow = 4;
 pub(super) const BINDING: BindingPow = 3;
-pub(super) const SINGLE_VALUE: BindingPow = 124;
 
 impl<'src> Token<'src> {
     pub const fn binding_pow(self) -> Option<BindingPow> {
         Some(match self.kind {
             Closed(..) | Comma => return None,
 
-            Tick | RightArrow | Ident | Quote | Keyword(..) | Open(Curly) => 0,
+            RightArrow | Ident | Quote | Keyword(..) | Open(Curly) => 0,
 
             Equal | EqualPipe => 2,
 
@@ -54,6 +53,8 @@ impl<'src> Token<'src> {
 
             Up => 121 + ((self.src.len() - 1) << 1),
 
+            Tick => usize::MAX - 2,
+
             Open(Squared | Round) => usize::MAX,
         })
     }
@@ -66,8 +67,11 @@ impl UnaryOp {
             Inc | Dec => 0,
             Fac => 0,
 
-            Neg => 115,
-            Not => 125,
+            Neg => 114,
+            Not => usize::MAX - 1,
+
+            Ptr => usize::MAX - 1,
+            Ref => usize::MAX - 1,
         }
     }
 }

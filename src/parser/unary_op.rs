@@ -12,9 +12,13 @@ pub enum UnaryOp {
     Dec, // b--
 
     Fac, // a!
+
+    Ptr, // -> a
+    Ref, // &a
 }
 
 use UnaryOp::*;
+
 impl fmt::Display for UnaryOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let string = match self {
@@ -24,7 +28,11 @@ impl fmt::Display for UnaryOp {
 
             Inc => "++",
             Dec => "--",
+
             Fac => "_!",
+
+            Ptr => "->",
+            Ref => "&s",
         };
         write!(f, "{string}")
     }

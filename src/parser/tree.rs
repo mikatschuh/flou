@@ -220,30 +220,19 @@ impl<'src> TreeDisplay<'src> for NodeWrapper<'src> {
                 .display(internalizer, &indent)),
             Unary { op, val } => tree!(op, val, |node: &NodeBox<'src>, indent| node
                 .display(internalizer, &indent)),
-            Ref { lifetime, val } => {
-                let first = format!(
-                    "'{} -> ",
-                    lifetime
-                        .as_ref()
-                        .map_or("_", |lifetime| internalizer.resolve(*lifetime))
-                );
-                format!(
-                    "{}{}",
-                    first,
-                    val.display(
-                        internalizer,
-                        &(indentation.clone() + &first.chars().map(|_| " ").collect::<String>())
-                    )
-                )
-            }
             List(list) => {
                 tree!("[]", vec list, |node: &NodeBox<'src>, indent| node.display(internalizer, &indent))
             }
             Contract { lhs, rhs } => {
-                tree!(format!(":"), [lhs], rhs, |node: &NodeBox<'src>, indent| {
+                tree!(":", [lhs], rhs, |node: &NodeBox<'src>, indent| {
                     node.display(internalizer, &indent)
                 })
             }
+            Lifetimed { sym, val } => tree!(
+                format!("'{}", internalizer.resolve(*sym)),
+                val,
+                |val: &NodeBox<'src>, indent| val.display(internalizer, &indent)
+            ),
             Statements(content) => {
                 tree!(vec content, |node: &NodeBox<'src>, indent| node.display(internalizer, &indent))
             }
@@ -386,6 +375,10 @@ pub enum Node<'src> {
         lhs: NodeBox<'src>,
         rhs: NodeBox<'src>,
     }, // a: type
+    Lifetimed {
+        sym: Symbol<'src>,
+        val: NodeBox<'src>,
+    },
 
     // single values
     Literal {
@@ -423,11 +416,6 @@ pub enum Node<'src> {
         op: UnaryOp,
         val: NodeBox<'src>,
     }, // op operand
-
-    Ref {
-        lifetime: Option<Symbol<'src>>,
-        val: NodeBox<'src>,
-    },
 }
 
 #[derive(Debug, PartialEq, Eq)]
