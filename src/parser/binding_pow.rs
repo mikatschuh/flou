@@ -1,13 +1,11 @@
 use crate::parser::{
     binary_op::BinaryOp,
-    keyword::Keyword,
     tokenizing::token::{Token, TokenKind},
     tree::Bracket,
     unary_op::UnaryOp,
 };
 
 use Bracket::*;
-use Keyword::*;
 use TokenKind::*;
 
 pub(super) type BindingPow = usize;
@@ -22,9 +20,9 @@ pub(super) const SINGLE_VALUE: BindingPow = 124;
 impl<'src> Token<'src> {
     pub const fn binding_pow(self) -> Option<BindingPow> {
         Some(match self.kind {
-            Closed(..) | Comma | Keyword(Else | Continue | Break | Return) => return None,
+            Closed(..) | Comma => return None,
 
-            Tick | RightArrow | Ident | Quote | Keyword(If | Loop | Proc) | Open(Curly) => 0,
+            Tick | RightArrow | Ident | Quote | Keyword(..) | Open(Curly) => 0,
 
             Equal | EqualPipe => 2,
 

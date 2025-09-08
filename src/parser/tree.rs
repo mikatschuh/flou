@@ -19,10 +19,9 @@ use std::{
 };
 
 pub trait TreeDisplay<'src> {
-    fn display(&self, internalizer: &Internalizer<'src>, indentation: String) -> String;
+    fn display(&self, internalizer: &Internalizer<'src>, indentation: &String) -> String;
 }
 
-const DISPLAY_INDENTATION: &str = "|   ";
 #[derive(Debug, PartialEq, Eq)]
 pub struct NodeWrapper<'src> {
     pub span: Span,
@@ -75,29 +74,129 @@ impl<'src> From<EscapeSequenceConfusion> for Note<'src> {
 }
 
 impl<'src> TreeDisplay<'src> for NodeWrapper<'src> {
-    fn display(&self, internalizer: &Internalizer<'src>, indentation: String) -> String {
+    fn display(&self, internalizer: &Internalizer<'src>, indentation: &String) -> String {
         let Some(ref node) = self.node else {
-            return "None".to_owned();
+            return "•".to_owned();
         };
-        let next_indentation = indentation.clone() + DISPLAY_INDENTATION;
-        use Node::*;
 
-        match node {
-            Binding { exprs } => {
+        /// Unicode Characters:
+        /// ─ │ ┌ ┐ └ ┘ ├ ┤ ┬ ┴ ┼ ╭ ╮ ╰ ╯
+        ///
+        /// ┌─ Node
+        /// │─ (=)
+        /// │─ (<)
+
+        const FORK_START: &str = "┌─";
+        const FORK_END: &str = "╰─";
+        const BRANCH: &str = "│─";
+        const VERTICAL_PLUS_2: &str = "│  ";
+
+        macro_rules! tree {
+            (vec $nodes:expr, $others:expr) => {{
+                let mut nodes = $nodes.iter().rev();
+                let last = nodes.next().unwrap();
+                let mut nodes = nodes.rev();
                 format!(
-                    "{}{}",
-                    exprs.first().display(internalizer, indentation.clone()),
-                    exprs
-                        .iter()
-                        .skip(1)
-                        .map(|expr| format!(
-                            "\n{}= {}",
-                            indentation.clone(),
-                            expr.display(internalizer, format!("{}  ", indentation))
+                    "{FORK_START} {}{}{}",
+                    $others(nodes.next().unwrap(), indentation.clone() + VERTICAL_PLUS_2),
+                    nodes
+                        .map(|node| format!(
+                            "\n{indentation}{BRANCH} {}",
+                            $others(node, indentation.clone() + VERTICAL_PLUS_2)
                         ))
-                        .collect::<String>()
+                        .collect::<String>(),
+                    format!(
+                        "\n{indentation}{FORK_END} {}",
+                        $others(last, indentation.clone() + "   ")
+                    )
                 )
-            }
+            }};
+            (vec $nodes:expr, $first:expr, $others:expr) => {{
+                let mut nodes = $nodes.iter().rev();
+                let last = nodes.next().unwrap();
+                let mut nodes = nodes.rev();
+                format!(
+                    "{FORK_START} {}{}{}",
+                    $first(nodes.next().unwrap(), indentation.clone() + VERTICAL_PLUS_2),
+                    nodes
+                        .map(|node| format!(
+                            "\n{indentation}{BRANCH} {}",
+                            $others(node, indentation.clone() + VERTICAL_PLUS_2)
+                        ))
+                        .collect::<String>(),
+                    format!(
+                        "\n{indentation}{FORK_END} {}",
+                        $others(last, indentation.clone() + "   ")
+                    )
+                )
+            }};
+            ($root:expr, vec $nodes:expr, $others:expr) => {{
+                let mut nodes = $nodes.iter().rev();
+                let last = nodes.next().unwrap();
+                let nodes = nodes.rev();
+                format!(
+                    "{}{}\n{indentation}{FORK_END} {}",
+                    $root,
+                    nodes
+                        .map(|node| format!(
+                            "\n{indentation}{BRANCH} {}",
+                            $others(node, indentation.clone() + VERTICAL_PLUS_2)
+                        ))
+                        .collect::<String>(),
+                    $others(last, indentation.clone() + "   ")
+                )
+            }};
+            ($root:expr, [$($prev_nodes:expr),*], $prev_others:expr, vec $nodes:expr, $others:expr) => {{
+                let mut nodes = $nodes.iter().rev();
+                let last = nodes.next().unwrap();
+                let nodes = nodes.rev();
+                format!(
+                    "{}{}{}\n{indentation}{FORK_END} {}",
+                    $root,
+                    vec![$(format!(
+                        "\n{indentation}{BRANCH} {}",
+                        $prev_others($prev_nodes, indentation.clone() + VERTICAL_PLUS_2)
+                    )), *]
+                        .into_iter()
+                        .collect::<String>(),
+                    nodes
+                        .map(|node| format!(
+                            "\n{indentation}{BRANCH} {}",
+                            $others(node, indentation.clone() + VERTICAL_PLUS_2)
+                        ))
+                        .collect::<String>(),
+                    $others(last, indentation.clone() + "   ")
+                )
+            }};
+            ($root:expr, $last:expr, $others:expr) => {
+                format!(
+                    "{}\n{indentation}{FORK_END} {}",
+                    $root,
+                    $others($last, indentation.clone() + "   ")
+                )
+            };
+            ($root:expr, [$($nodes:expr),*], $last:expr, $others:expr) => {
+                format!(
+                    "{}{}\n{indentation}{FORK_END} {}",
+                    $root,
+                    vec![$(format!(
+                        "\n{indentation}{BRANCH} {}",
+                        $others($nodes, indentation.clone() + VERTICAL_PLUS_2)
+                    )), *]
+                        .into_iter()
+                        .collect::<String>(),
+                    $others($last, indentation.clone() + "   ")
+                )
+            };
+        }
+
+        use Node::*;
+        match node {
+            Binding { exprs } => tree!(
+                vec exprs,
+                |node: &NodeBox<'src>, indent| node.display(internalizer, &indent),
+                |node: &NodeBox<'src>, indent| format!("(=) {}", node.display(internalizer, &(indent + "  ")))
+            ),
             Literal { val } => format!(
                 "{}{}",
                 val,
@@ -110,227 +209,122 @@ impl<'src> TreeDisplay<'src> for NodeWrapper<'src> {
             Lifetime(sym) => format!("Lifetime  {}", internalizer.resolve(*sym)),
             Placeholder => "..".to_owned(),
             Quote(quote) => format!("Quote  \"{}\"", with_written_out_escape_sequences(quote)),
-            Label { label, content } => format!(
-                "Label  {} - {}",
-                internalizer.resolve(*label),
-                content.display(internalizer, indentation)
+            Label { label, content } => tree!(
+                format!("Label  {}", internalizer.resolve(*label)),
+                content,
+                |node: &NodeBox<'src>, indent| node.display(internalizer, &indent)
             ),
             PrimitiveType(ty) => format!("Type  {}", ty.display(internalizer, indentation)),
             Unit => "()".to_owned(),
-            Binary { op, lhs, rhs } => format!(
-                "{op} {{\n{}{}\n{}{} \n{}}}",
-                next_indentation.clone(),
-                lhs.display(internalizer, next_indentation.clone()),
-                next_indentation.clone(),
-                rhs.display(internalizer, next_indentation),
-                indentation
-            ),
-            Unary { op, val } => format!(
-                "{op} {}",
-                val.display(
-                    internalizer,
-                    indentation
-                        + &op
-                            .to_string()
-                            .chars()
-                            .fold(String::new(), |acc, _| acc + " ")
-                        + " "
-                )
-            ),
+            Binary { op, lhs, rhs } => tree!(op, [lhs], rhs, |node: &NodeBox<'src>, indent| node
+                .display(internalizer, &indent)),
+            Unary { op, val } => tree!(op, val, |node: &NodeBox<'src>, indent| node
+                .display(internalizer, &indent)),
             Ref { lifetime, val } => {
-                format!(
-                    "'{} -> {}",
+                let first = format!(
+                    "'{} -> ",
                     lifetime
                         .as_ref()
-                        .map_or("_", |lifetime| internalizer.resolve(*lifetime)),
-                    val.display(internalizer, indentation)
+                        .map_or("_", |lifetime| internalizer.resolve(*lifetime))
+                );
+                format!(
+                    "{}{}",
+                    first,
+                    val.display(
+                        internalizer,
+                        &(indentation.clone() + &first.chars().map(|_| " ").collect::<String>())
+                    )
                 )
             }
             List(list) => {
-                if list.len() < 2 {
-                    format!(
-                        "[{}]",
-                        list.iter()
-                            .map(|item| { item.display(internalizer, next_indentation.clone()) })
-                            .collect::<String>()
-                    )
-                } else {
-                    format!(
-                        "[\n{}{}]",
-                        list.iter()
-                            .map(|item| {
-                                format!(
-                                    "{}{},\n",
-                                    next_indentation.clone(),
-                                    item.display(internalizer, next_indentation.clone())
-                                )
-                            })
-                            .collect::<String>(),
-                        indentation
-                    )
-                }
+                tree!("[]", vec list, |node: &NodeBox<'src>, indent| node.display(internalizer, &indent))
             }
-            Contract { lhs, rhs } => format!(
-                ": {{\n{}{}\n{}{} \n{}}}",
-                next_indentation.clone(),
-                lhs.display(internalizer, next_indentation.clone()),
-                next_indentation.clone(),
-                rhs.display(internalizer, next_indentation),
-                indentation
-            ),
+            Contract { lhs, rhs } => {
+                tree!(format!(":"), [lhs], rhs, |node: &NodeBox<'src>, indent| {
+                    node.display(internalizer, &indent)
+                })
+            }
             Statements(content) => {
-                if content.len() == 1 {
-                    content[0].display(internalizer, next_indentation.clone())
-                } else {
-                    let mut string = String::new();
-                    if content.len() == 0 {
-                        string += &format!("\n{next_indentation}")
-                    } else {
-                        content.into_iter().map(|node| node).for_each(|node| {
-                            string += &format!(
-                                "\n{}{}",
-                                next_indentation,
-                                &node.display(internalizer, next_indentation.clone())
-                            )
-                        });
-                    }
-                    format!("_{string}\n{indentation}¯")
-                }
+                tree!(vec content, |node: &NodeBox<'src>, indent| node.display(internalizer, &indent))
             }
-            Chain { first, additions } => format!(
-                "Chained [\n{}{}{}\n{}]",
-                next_indentation.clone(),
-                first.display(internalizer, next_indentation.clone() + "   "),
-                additions
-                    .iter()
-                    .map(|item| {
-                        let op = item.0.to_string();
-                        format!(
-                            "\n{}{}{}{}",
-                            next_indentation.clone(),
-                            op,
-                            (0..3 - op.chars().count()).map(|_| " ").collect::<String>(),
-                            item.1
-                                .display(internalizer, next_indentation.clone() + "   ")
-                        )
-                    })
-                    .collect::<String>(),
-                indentation
+            Chain { first, additions } => tree!(
+                first.display(internalizer, indentation),
+                vec additions,
+                |node: &(BinaryOp, NodeBox<'src>), indent| format!(
+                    "{} {}",
+                    node.0,
+                    node.1.display(
+                        internalizer,
+                        &(indent + format!("{} ", node.0.to_string().chars().map(|_| " ").collect::<String>()).as_ref())))
             ),
             Loop {
                 condition,
                 then_body,
                 else_body,
-            } => format!(
-                "{} {}\n{}while {}{}",
-                "loop",
-                condition.display(internalizer, indentation.clone() + "     "),
-                indentation.clone(),
-                then_body.display(internalizer, indentation.clone() + "      "),
-                else_body
+            } => {
+                let vector = else_body
                     .as_ref()
-                    .map_or("".to_owned(), |else_body| format!(
-                        "\n{}else {}",
-                        indentation.clone(),
-                        &else_body.display(internalizer, indentation + "     "),
-                    ))
-            ),
+                    .map_or_else(|| vec![then_body], |else_body| vec![then_body, &else_body]);
+                tree!(
+                    "loop",
+                    [condition],
+                    |node: &NodeBox<'src>, indent| node.display(internalizer, &indent),
+                    vec vector,
+                    |node: &Path<'src>, indent| node.display(internalizer, &indent)
+                )
+            }
             If {
                 condition,
                 then_body,
                 else_body,
-            } => format!(
-                "if {}\n{}then {}{}",
-                condition.display(internalizer, indentation.clone() + "   "),
-                indentation.clone(),
-                then_body.display(internalizer, indentation.clone() + "     "),
-                else_body
+            } => {
+                let vector = else_body
                     .as_ref()
-                    .map_or("".to_owned(), |else_body| format!(
-                        "\n{}else {}",
-                        indentation.clone(),
-                        &else_body.display(internalizer, indentation + "     "),
-                    ))
-            ),
-            Proc { convention, body } => {
-                format!(
-                    "proc {}{}",
-                    convention.as_ref().map_or_else(
-                        || "".to_owned(),
-                        |conv| format!("{} ", conv.display(internalizer, indentation.clone()))
-                    ),
-                    body.display(internalizer, indentation)
+                    .map_or_else(|| vec![then_body], |else_body| vec![then_body, &else_body]);
+                tree!(
+                    "if",
+                    [condition],
+                    |node: &NodeBox<'src>, indent| node.display(internalizer, &indent),
+                    vec vector,
+                    |node: &Path<'src>, indent| node.display(internalizer, &indent)
                 )
             }
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum Jump<'src> {
-    Continue { layers: usize },
-    Break { layers: usize, val: NodeBox<'src> },
-    Return { layers: usize, val: NodeBox<'src> },
-}
-
-impl<'src> TreeDisplay<'src> for Jump<'src> {
-    fn display(&self, internalizer: &Internalizer<'src>, indentation: String) -> String {
-        use Jump::*;
-        match self {
+            Proc { convention, body } => {
+                let body = vec![body];
+                tree!(
+                    "proc",
+                    [convention],
+                    |conv: &Option<NodeBox<'src>>, indent| conv.as_ref().map_or_else(
+                        || "\"default\"".to_owned(),
+                        |conv| conv.display(internalizer, &indent)
+                    ),
+                    vec body,
+                    |body: &Path<'src>, indent| body.display(internalizer, &indent)
+                )
+            }
             Continue { layers } => format!("continue * {}", layers + 1),
-            Break { layers, val } => format!(
-                "break * {}{}",
-                layers + 1,
-                format!(" {}", val.display(internalizer, indentation))
+            Break { layers, val } => tree!(
+                format!("break * {layers}"),
+                val,
+                |val: &NodeBox<'src>, indent| val.display(internalizer, &indent)
             ),
-            Return { layers, val } => format!(
-                "return * {}{}",
-                layers + 1,
-                format!(" {}", val.display(internalizer, indentation))
-            ),
+            Return { val } => tree!(format!("return"), val, |val: &NodeBox<'src>, indent| val
+                .display(internalizer, &indent)),
         }
     }
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Path<'src> {
-    pub node: Option<NodeBox<'src>>,
-    pub jump: Option<Jump<'src>>,
-}
-
-impl<'src> Path<'src> {
-    #[inline]
-    pub const fn is_none(&self) -> bool {
-        self.node.is_none() && self.jump.is_none()
-    }
+    pub node: NodeBox<'src>,
 }
 
 impl<'src> TreeDisplay<'src> for Path<'src> {
-    fn display(&self, internalizer: &Internalizer<'src>, indentation: String) -> String {
-        match self.node.as_ref() {
-            Some(node) => {
-                node.display(internalizer, indentation.clone())
-                    + &self.jump.as_ref().map_or_else(
-                        || "".to_owned(),
-                        |jump| {
-                            format!(
-                                "\n{}{}",
-                                indentation.clone(),
-                                jump.display(internalizer, indentation)
-                            )
-                        },
-                    )
-            }
-            None => format!(
-                "{}",
-                self.jump.as_ref().map_or_else(
-                    || "".to_owned(),
-                    |jump| jump.display(internalizer, indentation)
-                )
-            ),
-        }
+    fn display(&self, internalizer: &Internalizer<'src>, indentation: &String) -> String {
+        self.node.display(internalizer, &indentation)
     }
 }
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Bracket {
     Round,
@@ -372,6 +366,17 @@ pub enum Node<'src> {
     Proc {
         convention: Option<NodeBox<'src>>,
         body: Path<'src>,
+    },
+
+    Continue {
+        layers: usize,
+    },
+    Break {
+        layers: usize,
+        val: NodeBox<'src>,
+    },
+    Return {
+        val: NodeBox<'src>,
     },
 
     Binding {

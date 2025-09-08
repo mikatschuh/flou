@@ -91,7 +91,7 @@ impl Task {
                 }
             }
             Task::Parse { path } => {
-                if path.file_name() != Some(&OsString::from("inter.flou")) {
+                if path.file_name() != Some(&OsString::from("inter.f")) {
                     return Ok(());
                 }
                 let mut file = OpenOptions::new().read(true).open(path)?;
@@ -104,7 +104,7 @@ impl Task {
                 println!(
                     "{}\n{}\n\nparsed in: {}",
                     *errors,
-                    root.display(&internalizer, String::new()),
+                    root.display(&internalizer, &String::new()),
                     format_time(now.elapsed().as_nanos()),
                 );
             }

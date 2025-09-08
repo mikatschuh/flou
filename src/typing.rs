@@ -61,7 +61,7 @@ impl<'tree> From<NodeBox<'tree>> for Type<'tree> {
 }
 
 impl<'tree> Type<'tree> {
-    pub fn display(&self, internalizer: &Internalizer<'tree>, indentation: String) -> String {
+    pub fn display(&self, internalizer: &Internalizer<'tree>, indentation: &String) -> String {
         match self {
             Number(num) => format!("{num}"),
             Expr(node) => node.display(internalizer, indentation),

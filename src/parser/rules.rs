@@ -3,13 +3,13 @@ use crate::{
     error::ErrorCode,
     parser::{
         binary_op::BinaryOp,
-        binding_pow::{self, PATH},
+        binding_pow::{self},
         keyword::Keyword,
         tokenizing::{
             resolve_escape_sequences,
             token::{Token, TokenKind::*},
         },
-        tree::{Bracket, Node, NodeBox, Note, Path},
+        tree::{Bracket, Node, NodeBox, Note},
         unary_op::UnaryOp,
         BindingPow, NodeWrapper, Parser,
     },
@@ -101,41 +101,65 @@ impl<'src> Token<'src> {
                         }))
                     }
                     Proc => {
-                        let calling_convention = state.parse_expr(binding_pow::PATH);
-                        let body = state.parse_expr(binding_pow::PATH);
-                        let span = body
-                            .as_ref()
-                            .map(|body| body.span)
-                            .unwrap_or(
-                                calling_convention
-                                    .as_ref()
-                                    .map(|calling_convention| calling_convention.span)
-                                    .unwrap_or(self.span),
-                            )
-                            .end();
-                        let Some(jump) = state.parse_return() else {
-                            state.errors.push(span, ErrorCode::ExpectedReturn);
-                            return Some(state.make_node(NodeWrapper::new(span).with_node(
-                                Node::Proc {
-                                    convention: calling_convention,
-                                    body: Path {
-                                        node: body,
-                                        jump: None,
-                                    },
-                                },
-                            )));
+                        let mut pos = self.span.end;
+                        let convention = if let Some(tok) = state.tokenizer.next_if(|next| {
+                            matches!(next.kind, Open(Bracket::Round | Bracket::Squared))
+                        }) {
+                            state.brackets += 1;
+                            let open_bracket = match tok.kind {
+                                Open(Bracket::Round) => Bracket::Round,
+                                Open(Bracket::Squared) => Bracket::Squared,
+                                _ => unreachable!(),
+                            };
+
+                            let content = state.parse_expr(0);
+                            pos = state.handle_closed_bracket(self.span.end, open_bracket).end;
+                            content
+                        } else {
+                            None
                         };
-                        state.make_node(NodeWrapper::new(self.span).with_node(Node::Proc {
-                            convention: calling_convention,
-                            body: Path {
-                                node: body,
-                                jump: Some(jump),
-                            },
-                        }))
+                        let body = state.pop_path(pos);
+                        state.make_node(
+                            NodeWrapper::new(self.span - body.node.span)
+                                .with_node(Node::Proc { convention, body }),
+                        )
                     }
-                    _ => {
-                        state.tokenizer.buffer(self);
+                    Else => {
+                        let body = state.pop_path(self.span.end);
+                        state
+                            .errors
+                            .push(self.span - body.node.span, ErrorCode::LonelyElse);
                         return None;
+                    }
+                    Continue => {
+                        let mut end = self.span.end;
+                        let layers = state
+                            .tokenizer
+                            .consume_while(|tok| tok.kind == Keyword(Keyword::Continue))
+                            .map(|tok| end = tok.span.end)
+                            .count();
+                        state.make_node(
+                            NodeWrapper::new(self.span - end).with_node(Node::Continue { layers }),
+                        )
+                    }
+                    Break => {
+                        let mut end = self.span.end;
+                        let layers = state
+                            .tokenizer
+                            .consume_while(|tok| tok.kind == Keyword(Keyword::Break))
+                            .map(|tok| end = tok.span.end)
+                            .count();
+                        let val = state.pop_expr(binding_pow::PATH, end);
+                        state.make_node(
+                            NodeWrapper::new(self.span - val.span)
+                                .with_node(Node::Break { layers, val }),
+                        )
+                    }
+                    Return => {
+                        let val = state.pop_expr(binding_pow::PATH, self.span.end);
+                        state.make_node(
+                            NodeWrapper::new(self.span - val.span).with_node(Node::Return { val }),
+                        )
                     }
                 }
             }

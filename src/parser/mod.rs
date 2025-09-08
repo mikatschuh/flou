@@ -4,7 +4,6 @@ use crate::{
     parser::{
         binding_pow::BindingPow,
         intern::{Internalizer, Symbol},
-        keyword::Keyword,
     },
     typing::TypeParser,
     utilities::Rc,
@@ -14,7 +13,7 @@ use tokenizing::{
     token::{Token, TokenKind},
     Tokenizer,
 };
-use tree::{Bracket, Jump, Node, NodeBox, NodeWrapper, Path};
+use tree::{Bracket, Node, NodeBox, NodeWrapper, Path};
 
 pub mod binary_op;
 mod binding_pow;
@@ -143,12 +142,8 @@ impl<'src> Parser<'src> {
 
     #[inline]
     fn pop_path(&mut self, pos: Position) -> Path<'src> {
-        let node = self.parse_expr(binding_pow::PATH);
-        let jump = self.parse_jump();
-        let path = Path { node, jump };
-        if path.is_none() {
-            self.errors.push(pos.into(), ErrorCode::ExpectedValue);
-        }
+        let node = self.pop_expr(binding_pow::PATH, pos);
+        let path = Path { node };
         path
     }
 
@@ -228,82 +223,6 @@ impl<'src> Parser<'src> {
             return (pos.into(), self.internalizer.empty());
         };
         (tok.span, self.internalizer.get(tok.src))
-    }
-
-    fn parse_jump(&mut self) -> Option<Jump<'src>> {
-        let Some(Token {
-            kind: TokenKind::Keyword(keyword),
-            ..
-        }) = self.tokenizer.peek()
-        else {
-            return None;
-        };
-        match keyword {
-            Keyword::Continue => {
-                self.tokenizer.next();
-
-                Some(Jump::Continue {
-                    layers: self
-                        .tokenizer
-                        .consume_while(|tok| tok.kind == TokenKind::Keyword(Keyword::Break))
-                        .count(),
-                })
-            }
-            Keyword::Break => {
-                let Token { span, .. } = self.tokenizer.next().unwrap();
-                let mut end = span.end;
-
-                Some(Jump::Break {
-                    layers: self
-                        .tokenizer
-                        .consume_while(|tok| tok.kind == TokenKind::Keyword(Keyword::Break))
-                        .map(|tok| end = tok.span.end)
-                        .count(),
-                    val: self.pop_expr(binding_pow::PATH, end),
-                })
-            }
-            Keyword::Return => {
-                let Token { span, .. } = self.tokenizer.next().unwrap();
-                let mut end = span.end;
-
-                Some(Jump::Return {
-                    layers: self
-                        .tokenizer
-                        .consume_while(|tok| tok.kind == TokenKind::Keyword(Keyword::Return))
-                        .map(|tok| end = tok.span.end)
-                        .count(),
-                    val: self.pop_expr(binding_pow::PATH, end),
-                })
-            }
-            _ => None,
-        }
-    }
-
-    #[inline]
-    fn parse_return(&mut self) -> Option<Jump<'src>> {
-        let Some(Token {
-            kind: TokenKind::Keyword(keyword),
-            ..
-        }) = self.tokenizer.peek()
-        else {
-            return None;
-        };
-        match keyword {
-            Keyword::Return => {
-                let Token { span, .. } = self.tokenizer.next().unwrap();
-                let mut end = span.end;
-
-                Some(Jump::Return {
-                    layers: self
-                        .tokenizer
-                        .consume_while(|tok| tok.kind == TokenKind::Keyword(Keyword::Return))
-                        .map(|tok| end = tok.span.end)
-                        .count(),
-                    val: self.pop_expr(binding_pow::PATH, end),
-                })
-            }
-            _ => None,
-        }
     }
 
     fn parse_list(&mut self, lhs: NodeBox<'src>) -> NodeBox<'src> {

@@ -136,8 +136,8 @@ impl Display for BinaryOp {
                 Pow { grade } =>
                     return write!(f, "^{}", (0..*grade).map(|_| "^").collect::<String>()),
 
-                Index => "-[-",
-                App => "-(-",
+                Index => "[",
+                App => "(",
             }
         )
     }
