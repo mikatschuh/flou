@@ -27,6 +27,8 @@ impl<'src> Token<'src> {
 
             Colon => 5,
 
+            Tick => 7,
+
             ColonEqual | LeftLeftEqual | RightRightEqual | PipeEqual | NotPipeEqual
             | RightPipeEqual | NotRightPipeEqual | AndEqual | NotAndEqual | PlusEqual
             | DashEqual | StarEqual | SlashEqual | PercentEqual | DotEqual | CrossEqual
@@ -52,8 +54,6 @@ impl<'src> Token<'src> {
             Not => 115,
 
             Up => 121 + ((self.src.len() - 1) << 1),
-
-            Tick => usize::MAX - 2,
 
             Open(Squared | Round) => usize::MAX,
         })
