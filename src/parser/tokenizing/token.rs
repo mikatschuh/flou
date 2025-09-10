@@ -287,6 +287,7 @@ impl<'src> Token<'src> {
             TokenKind::Not => Not,
             RightArrow => Ptr,
             And => Ref,
+            Ident if self.src == "mut" => Mut,
             _ => return None,
         })
     }

@@ -27,7 +27,7 @@ impl<'src> Token<'src> {
 
             Colon => 5,
 
-            Tick => 7,
+            Tick => 8,
 
             ColonEqual | LeftLeftEqual | RightRightEqual | PipeEqual | NotPipeEqual
             | RightPipeEqual | NotRightPipeEqual | AndEqual | NotAndEqual | PlusEqual
@@ -66,6 +66,8 @@ impl UnaryOp {
         match self {
             Inc | Dec => 0,
             Fac => 0,
+
+            Mut => 7,
 
             Neg => 114,
             Not => usize::MAX - 1,
