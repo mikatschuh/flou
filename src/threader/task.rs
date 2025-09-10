@@ -103,8 +103,8 @@ impl Task {
                 let (root, internalizer, errors) = parse(&content, &arena, path);
                 println!(
                     "{}\n{}\n\nparsed in: {}",
-                    *errors,
                     root.display(&internalizer, &String::new()),
+                    *errors,
                     format_time(now.elapsed().as_nanos()),
                 );
             }
