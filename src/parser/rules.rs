@@ -184,6 +184,24 @@ impl<'src> Token<'src> {
                 content.span = self.span - end;
                 content
             }
+            Pipe => {
+                let op = BinaryOp::BitOr;
+                let Some(rhs) = state.parse_expr(op.binding_pow()) else {
+                    return Some(
+                        state.make_node(NodeWrapper::new(self.span).with_node(Node::Or(vec![]))),
+                    );
+                };
+                let mut chain = vec![rhs];
+                while state.tokenizer.next_is(|tok| tok.kind == Pipe) {
+                    let Token { span, .. } = state.tokenizer.next().unwrap();
+                    let next = state.pop_expr(op.binding_pow(), span.end);
+                    chain.push(next);
+                }
+                state.make_node(
+                    NodeWrapper::new(self.span - chain.last().unwrap().span)
+                        .with_node(Node::Or(chain)),
+                )
+            }
             Plus | PlusPlus | DashDash => state.pop_expr(UnaryOp::Neg.binding_pow(), self.span.end),
             _ => match self.as_prefix() {
                 Some(op) => {
@@ -258,7 +276,24 @@ impl<'src> Token<'src> {
                     self.span.end + 1,
                 )
             }
-
+            Pipe => {
+                let op = BinaryOp::BitOr;
+                let Some(rhs) = state.parse_expr(op.binding_pow()) else {
+                    return Ok(state.make_node(
+                        NodeWrapper::new(lhs.span - self.span).with_node(Node::Or(vec![lhs])),
+                    ));
+                };
+                let mut chain = vec![lhs, rhs];
+                while state.tokenizer.next_is(|tok| tok.kind == Pipe) {
+                    let Token { span, .. } = state.tokenizer.next().unwrap();
+                    let next = state.pop_expr(op.binding_pow(), span.end);
+                    chain.push(next);
+                }
+                state.make_node(
+                    NodeWrapper::new(chain.first().unwrap().span - chain.last().unwrap().span)
+                        .with_node(Node::Or(chain)),
+                )
+            }
             _ => {
                 if let Some(op) = self.as_postfix() {
                     state.make_node(

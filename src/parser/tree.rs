@@ -132,19 +132,22 @@ impl<'src> TreeDisplay<'src> for NodeWrapper<'src> {
             }};
             ($root:expr, vec $nodes:expr, $others:expr) => {{
                 let mut nodes = $nodes.iter().rev();
-                let last = nodes.next().unwrap();
-                let nodes = nodes.rev();
-                format!(
-                    "{}{}\n{indentation}{FORK_END} {}",
-                    $root,
-                    nodes
-                        .map(|node| format!(
-                            "\n{indentation}{BRANCH} {}",
-                            $others(node, indentation.clone() + VERTICAL_PLUS_2)
-                        ))
-                        .collect::<String>(),
-                    $others(last, indentation.clone() + "   ")
-                )
+                if let Some(last) = nodes.next() {
+                    let nodes = nodes.rev();
+                    format!(
+                        "{}{}\n{indentation}{FORK_END} {}",
+                        $root,
+                        nodes
+                            .map(|node| format!(
+                                "\n{indentation}{BRANCH} {}",
+                                $others(node, indentation.clone() + VERTICAL_PLUS_2)
+                            ))
+                            .collect::<String>(),
+                        $others(last, indentation.clone() + "   ")
+                    )
+                } else {
+                    $root.to_string()
+                }
             }};
             ($root:expr, [$($prev_nodes:expr),*], $prev_others:expr, vec $nodes:expr, $others:expr) => {{
                 let mut nodes = $nodes.iter().rev();
@@ -222,6 +225,9 @@ impl<'src> TreeDisplay<'src> for NodeWrapper<'src> {
                 .display(internalizer, &indent)),
             List(list) => {
                 tree!("[]", vec list, |node: &NodeBox<'src>, indent| node.display(internalizer, &indent))
+            }
+            Or(list) => {
+                tree!("|", vec list, |node: &NodeBox<'src>, indent| node.display(internalizer, &indent))
             }
             Contract { lhs, rhs } => {
                 tree!(":", [lhs], rhs, |node: &NodeBox<'src>, indent| {
@@ -397,6 +403,7 @@ pub enum Node<'src> {
 
     PrimitiveType(Type<'src>), // u32, i32, c32, f32, ...
     Unit,
+    Or(Vec<NodeBox<'src>>),
 
     // multiple values
     List(comp::Vec<NodeBox<'src>, 2>),       // a, b, c, d, ...
