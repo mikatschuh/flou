@@ -195,7 +195,7 @@ impl<'src> TreeDisplay<'src> for NodeWrapper<'src> {
             Binding { exprs } => tree!(
                 vec exprs,
                 |node: &NodeBox<'src>, indent| node.display(internalizer, &indent),
-                |node: &NodeBox<'src>, indent| format!("(=) {}", node.display(internalizer, &(indent + "  ")))
+                |node: &NodeBox<'src>, indent| format!("(=) {}", node.display(internalizer, &(indent + "    ")))
             ),
             Literal { val } => format!(
                 "{}{}",
