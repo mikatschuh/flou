@@ -74,7 +74,7 @@ impl Display for BinaryOp {
             f,
             "{}",
             match self {
-                Write => ":=",
+                Write => "=",
 
                 LshAssign => "<<=",
                 RshAssign => ">>=",

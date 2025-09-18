@@ -1,14 +1,19 @@
+pub mod num;
 #[cfg(test)]
 pub mod test;
 #[allow(dead_code)]
 pub mod token;
 
-use std::{iter::FusedIterator, str::CharIndices, vec::IntoIter};
+use std::{collections::VecDeque, iter::FusedIterator, vec::IntoIter};
 use token::Token;
 
 use crate::{
     error::{ErrorCode, Errors, Position, Span},
-    parser::{keyword::Keyword, tokenizing::token::TokenKind},
+    parser::{
+        keyword::Keyword,
+        tokenizing::{num::Literal, token::TokenKind},
+    },
+    typing::TypeParser,
     utilities::{ArrayQueue, Rc},
 };
 
@@ -18,20 +23,20 @@ const BUFFER_LOG_2: usize = 1;
 #[derive(Debug, Clone)]
 pub struct Tokenizer<'src> {
     span: Span,
-    pos_state: PositionState,
 
     state: State,
 
-    text: &'src str,
-    chars: CharIndices<'src>,
+    text: &'src [u8],
 
     start_i: usize,
     i: usize,
     next_i: usize,
 
     buffer: ArrayQueue<Token<'src>, BUFFER_SIZE, BUFFER_LOG_2>,
+    numbers: VecDeque<Literal>,
 
     errors: Rc<Errors<'src>>,
+    type_parser: TypeParser,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -47,27 +52,6 @@ pub struct EscapeSequenceConfusion {
     sequence: String,
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
-enum PositionState {
-    SoF,
-    JustAfterNewLine,
-    WithinLine,
-}
-
-impl PositionState {
-    fn step(&mut self, pos: &mut Position, c: char) {
-        use PositionState::*;
-        match self {
-            SoF => {}
-            JustAfterNewLine => pos.next_line(),
-            WithinLine => *pos += 1,
-        }
-        *self = match c {
-            '\n' => JustAfterNewLine,
-            _ => WithinLine,
-        }
-    }
-}
 impl<'src> Iterator for Tokenizer<'src> {
     type Item = Token<'src>;
     fn next(&mut self) -> Option<Self::Item> {
@@ -90,23 +74,23 @@ impl<'src> Tokenizer<'src> {
 }
 
 impl<'src> Tokenizer<'src> {
-    pub fn new(text: &'src str, errors: Rc<Errors<'src>>) -> Self {
+    pub fn new(text: &'src str, errors: Rc<Errors<'src>>, type_parser: TypeParser) -> Self {
         Tokenizer {
             span: Span::beginning(),
-            pos_state: PositionState::SoF,
 
             state: State::Nothing,
 
-            text,
-            chars: text.char_indices(),
+            text: text.as_bytes(),
 
             start_i: 0,
             i: 0,
             next_i: 0,
 
             buffer: ArrayQueue::new(),
+            numbers: VecDeque::new(),
 
             errors,
+            type_parser,
         }
     }
 
@@ -141,6 +125,12 @@ impl<'src> Tokenizer<'src> {
         }
     }
 
+    pub fn get_literal(&mut self) -> Literal {
+        self.numbers
+            .pop_front()
+            .expect("This shouldnt be called without the literal token")
+    }
+
     /// Method for buffering a token. If the buffer is full (or this is called twice in a row)
     /// a panic is invocated.
     pub fn buffer(&mut self, token: Token<'src>) {
@@ -149,12 +139,60 @@ impl<'src> Tokenizer<'src> {
 }
 
 impl<'src> Tokenizer<'src> {
-    fn next_char(&mut self) -> Option<char> {
-        let (i, c) = self.chars.next()?;
-        self.pos_state.step(self.span.end_mut(), c);
+    fn consume_one_char(&mut self) -> Option<char> {
+        if self.text.is_empty() || self.next_i >= self.text.len() {
+            return None;
+        }
         self.i = self.next_i;
-        self.next_i = i + c.len_utf8();
-        Some(c)
+        if self.i != 0 {
+            if self.text[self.i - 1] == b'\n' {
+                self.span.end.next_line();
+            } else {
+                self.span.end += 1;
+            }
+        } // stepping all important variables
+
+        let first = self.text[self.i];
+
+        let (len, mut codepoint): (usize, u32) = if first & 0b1000_0000 == 0b0000_0000 {
+            // 1 Byte ASCII: 0xxxxxxx
+            (1, first as u32)
+        } else if first & 0b1110_0000 == 0b1100_0000 {
+            // 2 Byte: 110xxxxx 10xxxxxx
+            (2, (first & 0x1F) as u32)
+        } else if first & 0b1111_0000 == 0b1110_0000 {
+            // 3 Byte: 1110xxxx 10xxxxxx 10xxxxxx
+            (3, (first & 0x0F) as u32)
+        } else if first & 0b1111_1000 == 0b1111_0000 {
+            // 4 Byte: 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
+            (4, (first & 0x07) as u32)
+        } else {
+            self.errors.push(self.span, ErrorCode::InvalidUTF8); // ungültiges UTF-8
+            self.text = &[];
+            return None;
+        };
+
+        if self.text.len() < len {
+            self.errors.push(self.span, ErrorCode::InvalidUTF8); // ungültiges UTF-8
+            self.text = &[];
+            return None;
+        }
+
+        // Folgebytes: 10xxxxxx
+        for &b in &self.text[self.i + 1..self.i + len] {
+            if b & 0b1100_0000 != 0b1000_0000 {
+                self.errors.push(self.span, ErrorCode::InvalidUTF8); // zu kurz
+                self.text = &[];
+                return None;
+            }
+            codepoint = (codepoint << 6) | ((b & 0x3F) as u32);
+        }
+
+        // In char verwandeln
+        let c = char::from_u32(codepoint)?;
+
+        self.next_i += len;
+        return Some(c);
     }
 
     #[inline]
@@ -167,11 +205,29 @@ impl<'src> Tokenizer<'src> {
     fn set_id(&mut self) {
         self.span.start = self.span.end;
         self.start_i = self.i;
-        self.state = State::Id
+        let (num_of_chars_used, literal) =
+            self.try_to_parse_literal(&self.text[self.start_i..], self.type_parser);
+        if num_of_chars_used > 0 {
+            self.i += num_of_chars_used - 1;
+            self.next_i += num_of_chars_used - 1;
+            self.span.end += num_of_chars_used - 1;
+        }
+        match literal {
+            Some(literal) => {
+                self.numbers.push_back(literal);
+                self.buffer.push_back(Token {
+                    span: self.span.start - self.span.end + 1,
+                    kind: TokenKind::Literal,
+                    src: to_str(self.text, self.start_i, self.i + 1),
+                });
+                self.state = State::Nothing
+            }
+            None => self.state = State::Id,
+        }
     }
 
     fn restock_tokens(&mut self) {
-        while let Some(c) = self.next_char() {
+        while let Some(c) = self.consume_one_char() {
             if c.is_whitespace() {
                 self.submit_current(self.span - 1, self.i); // -1 to ignore the whitespace
             } else {
@@ -208,16 +264,16 @@ impl<'src> Tokenizer<'src> {
     }
 
     fn comment(&mut self) {
-        while !matches!(self.next_char(), Some('\n')) {}
+        while !matches!(self.consume_one_char(), Some('\n')) {}
     }
 
     fn quote(&mut self, start_i: usize) {
         self.span.start = self.span.end;
-        while let Some(c) = self.next_char() {
+        while let Some(c) = self.consume_one_char() {
             if c == '"' {
                 self.buffer.push_back(Token {
                     span: self.span.start - self.span.end + 1,
-                    src: &self.text[start_i..self.next_i],
+                    src: to_str(self.text, start_i, self.next_i),
                     kind: TokenKind::Quote,
                 });
                 return;
@@ -226,12 +282,12 @@ impl<'src> Tokenizer<'src> {
         self.errors.push(
             self.span,
             ErrorCode::NoClosingQuotes {
-                quote: &self.text[start_i..self.next_i],
+                quote: to_str(self.text, start_i, self.next_i),
             },
         );
         self.buffer.push_back(Token {
             span: self.span,
-            src: &self.text[start_i..self.next_i],
+            src: to_str(self.text, start_i, self.next_i),
             kind: TokenKind::Quote,
         })
     }
@@ -240,20 +296,24 @@ impl<'src> Tokenizer<'src> {
         match self.state {
             State::Op(token) => self.buffer.push_back(Token {
                 span: span.start - span.end + 1,
-                src: &self.text[self.start_i..end_i],
+                src: to_str(self.text, self.start_i, end_i),
                 kind: token,
             }),
             State::Id => self.buffer.push_back(Token {
                 span: span.start - span.end + 1,
-                kind: Keyword::from_str(&self.text[self.start_i..end_i])
+                kind: Keyword::from_str(to_str(self.text, self.start_i, end_i))
                     .map(TokenKind::Keyword)
                     .unwrap_or(TokenKind::Ident),
-                src: &self.text[self.start_i..end_i],
+                src: to_str(self.text, self.start_i, end_i),
             }),
             State::Nothing => return, // skip the reassignment
         }
         self.state = State::Nothing
     }
+}
+
+fn to_str(bytes: &[u8], start: usize, end: usize) -> &str {
+    unsafe { str::from_utf8_unchecked(&bytes[start..end]) }
 }
 
 pub fn with_written_out_escape_sequences(string: &str) -> String {

@@ -51,6 +51,7 @@ pub struct Error<'src> {
 pub enum ErrorCode<'src> {
     ExpectedValue,
     ExpectedIdent,
+    ExpectedInterface,
 
     NoClosingQuotes { quote: &'src str },
     // control structure mistakes
@@ -62,6 +63,8 @@ pub enum ErrorCode<'src> {
     ExpectedClosedBracket { opened: Bracket },
     NoClosedBracket { opened: Bracket },
     WrongClosedBracket { expected: Bracket, found: Bracket },
+
+    InvalidUTF8,
 }
 impl<'a> Error<'a> {
     pub fn new(pos: Span, error: ErrorCode<'a>) -> Self {
@@ -187,7 +190,11 @@ impl Error<'_> {
             ExpectedIdent => format_error!(
                 self.section.to_string(path),
                 "expected an identifier",
-                "you have to always put a value behind a tick"
+                "you have to always put an identifier behind a tick"
+            ),
+            ExpectedInterface => format_error!(
+                self.section.to_string(path),
+                "expected a function interface"
             ),
             NoClosingQuotes { quote } => format_error!(
                 self.section.to_string(path),
@@ -232,6 +239,12 @@ impl Error<'_> {
                     self.section.to_string(path),
                     "found a closed bracket {} but actually expected {}",
                     [found.display_closed(), expected.display_closed()]
+                )
+            }
+            InvalidUTF8 => {
+                format_error!(
+                    self.section.to_string(path),
+                    "found invalid UTF-8 character"
                 )
             }
         })

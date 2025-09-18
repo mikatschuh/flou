@@ -1,5 +1,4 @@
 use bumpalo::boxed::Box as BumpBox;
-use num::BigUint;
 
 use crate::{
     comp,
@@ -7,7 +6,7 @@ use crate::{
     parser::{
         binary_op::BinaryOp,
         intern::{Internalizer, Symbol},
-        tokenizing::{with_written_out_escape_sequences, EscapeSequenceConfusion},
+        tokenizing::{num::Literal, with_written_out_escape_sequences, EscapeSequenceConfusion},
         unary_op::UnaryOp,
     },
     typing::Type,
@@ -73,23 +72,22 @@ impl<'src> From<EscapeSequenceConfusion> for Note<'src> {
     }
 }
 
+/// Unicode Characters:
+/// ─ │ ┌ ┐ └ ┘ ├ ┤ ┬ ┴ ┼ ╭ ╮ ╰ ╯
+///
+/// ┌─ Node
+/// │─ (=)
+/// │─ (<)
+const FORK_START: &str = "┌─";
+const FORK_END: &str = "╰─";
+const BRANCH: &str = "│─";
+const VERTICAL_PLUS_2: &str = "│  ";
+
 impl<'src> TreeDisplay<'src> for NodeWrapper<'src> {
     fn display(&self, internalizer: &Internalizer<'src>, indentation: &String) -> String {
         let Some(ref node) = self.node else {
             return "•".to_owned();
         };
-
-        /// Unicode Characters:
-        /// ─ │ ┌ ┐ └ ┘ ├ ┤ ┬ ┴ ┼ ╭ ╮ ╰ ╯
-        ///
-        /// ┌─ Node
-        /// │─ (=)
-        /// │─ (<)
-
-        const FORK_START: &str = "┌─";
-        const FORK_END: &str = "╰─";
-        const BRANCH: &str = "│─";
-        const VERTICAL_PLUS_2: &str = "│  ";
 
         macro_rules! tree {
             (vec $nodes:expr, $others:expr) => {{
@@ -171,6 +169,34 @@ impl<'src> TreeDisplay<'src> for NodeWrapper<'src> {
                     $others(last, indentation.clone() + "   ")
                 )
             }};
+            ($root:expr, [$($prev_nodes:expr),*], $prev_others:expr, [$($after_prev_nodes:expr),*], $after_prev_others:expr, vec $nodes:expr, $others:expr) => {{
+                let mut nodes = $nodes.iter().rev();
+                let last = nodes.next().unwrap();
+                let nodes = nodes.rev();
+                format!(
+                    "{}{}{}{}\n{indentation}{FORK_END} {}",
+                    $root,
+                    vec![$(format!(
+                        "\n{indentation}{BRANCH} {}",
+                        $prev_others($prev_nodes, indentation.clone() + VERTICAL_PLUS_2)
+                    )), *]
+                        .into_iter()
+                        .collect::<String>(),
+                    vec![$(format!(
+                        "\n{indentation}{BRANCH} {}",
+                        $after_prev_others($after_prev_nodes, indentation.clone() + VERTICAL_PLUS_2)
+                    )), *]
+                        .into_iter()
+                        .collect::<String>(),
+                    nodes
+                        .map(|node| format!(
+                            "\n{indentation}{BRANCH} {}",
+                            $others(node, indentation.clone() + VERTICAL_PLUS_2)
+                        ))
+                        .collect::<String>(),
+                    $others(last, indentation.clone() + "   ")
+                )
+            }};
             ($root:expr, $last:expr, $others:expr) => {
                 format!(
                     "{}\n{indentation}{FORK_END} {}",
@@ -198,22 +224,41 @@ impl<'src> TreeDisplay<'src> for NodeWrapper<'src> {
             Binding { exprs } => tree!(
                 vec exprs,
                 |node: &NodeBox<'src>, indent| node.display(internalizer, &indent),
-                |node: &NodeBox<'src>, indent| format!("(=) {}", node.display(internalizer, &(indent + "    ")))
+                |node: &NodeBox<'src>, indent| format!("(::) {}", node.display(internalizer, &(indent + "     ")))
             ),
-            Literal { val } => format!(
-                "{}{}",
-                val,
-                self.typed.as_ref().map_or("".to_owned(), |ty| format!(
-                    " - {}",
-                    ty.display(internalizer, indentation)
-                ))
+            Iterator { exprs } => tree!(
+                vec exprs,
+                |node: &NodeBox<'src>, indent| node.display(internalizer, &indent),
+                |node: &NodeBox<'src>, indent| format!("(:) {}", node.display(internalizer, &(indent + "    ")))
             ),
-            Ident(id) => format!("Id  {}", internalizer.resolve(*id)),
+
+            Ident { sym, literal } => {
+                format!(
+                    "Id  {}{}",
+                    internalizer.resolve(*sym),
+                    literal.as_ref().map_or_else(
+                        || "".to_owned(),
+                        |literal| format!(
+                            "\n{indentation}| digits = {}\n{indentation}| digits-after-dot = {}{}{}",
+                            literal.digits,
+                            literal.digits_after_dot,
+                            literal.exponent.as_ref().map_or_else(
+                                || "".to_owned(),
+                                |exp| format!("\n{indentation}| exponent = {exp}")
+                            ),
+                            literal.type_suffix.as_ref().map_or_else(
+                                || "".to_owned(),
+                                |ty| format!("\n{indentation}| type-suffix = {ty}")
+                            )
+                        )
+                    )
+                )
+            }
             Lifetime(sym) => format!("Lifetime  {}", internalizer.resolve(*sym)),
-            Placeholder => "..".to_owned(),
+            Placeholder => "_".to_owned(),
             Quote(quote) => format!("Quote  \"{}\"", with_written_out_escape_sequences(quote)),
-            Label { label, content } => tree!(
-                format!("Label  {}", internalizer.resolve(*label)),
+            Typed { label, content } => tree!(
+                format!("Typed  {}", internalizer.resolve(*label)),
                 content,
                 |node: &NodeBox<'src>, indent| node.display(internalizer, &indent)
             ),
@@ -228,11 +273,6 @@ impl<'src> TreeDisplay<'src> for NodeWrapper<'src> {
             }
             Or(list) => {
                 tree!("|", vec list, |node: &NodeBox<'src>, indent| node.display(internalizer, &indent))
-            }
-            Contract { lhs, rhs } => {
-                tree!(":", [lhs], rhs, |node: &NodeBox<'src>, indent| {
-                    node.display(internalizer, &indent)
-                })
             }
             Lifetimed { sym, val } => tree!(
                 format!("'{}", internalizer.resolve(*sym)),
@@ -284,7 +324,11 @@ impl<'src> TreeDisplay<'src> for NodeWrapper<'src> {
                     |node: &Path<'src>, indent| node.display(internalizer, &indent)
                 )
             }
-            Proc { convention, body } => {
+            Proc {
+                interface,
+                convention,
+                body,
+            } => {
                 let body = vec![body];
                 tree!(
                     "proc",
@@ -293,6 +337,8 @@ impl<'src> TreeDisplay<'src> for NodeWrapper<'src> {
                         || "\"default\"".to_owned(),
                         |conv| conv.display(internalizer, &indent)
                     ),
+                    [interface],
+                    |conv: &FunctionInterface<'src>, indent| conv.display(internalizer, &indent),
                     vec body,
                     |body: &Path<'src>, indent| body.display(internalizer, &indent)
                 )
@@ -359,6 +405,7 @@ pub enum Node<'src> {
     }, // loop condition then_body (else else_body)
 
     Proc {
+        interface: FunctionInterface<'src>,
         convention: Option<NodeBox<'src>>,
         body: Path<'src>,
     },
@@ -377,28 +424,28 @@ pub enum Node<'src> {
     Binding {
         exprs: comp::Vec<NodeBox<'src>, 2>,
     },
-    Contract {
-        lhs: NodeBox<'src>,
-        rhs: NodeBox<'src>,
-    }, // a: type
+    Iterator {
+        exprs: comp::Vec<NodeBox<'src>, 2>,
+    },
     Lifetimed {
         sym: Symbol<'src>,
         val: NodeBox<'src>,
     },
 
     // single values
-    Literal {
-        val: BigUint,
-    }, // (0(b/s/o/d/x))N(.N)((u/i/f/c)(0(b/s/o/d/x))N)(i)
     Quote(String), // "..."
-    Placeholder,   // ..
-    Label {
+    Placeholder,   // _
+
+    Typed {
         label: Symbol<'src>,
         content: NodeBox<'src>,
     },
 
     // identifiers
-    Ident(Symbol<'src>),    // x
+    Ident {
+        sym: Symbol<'src>,
+        literal: Option<Literal>,
+    }, // x / (0(b/s/o/d/x))N(.N)((u/i/f/c)(0(b/s/o/d/x))N)(i)
     Lifetime(Symbol<'src>), // 'x
 
     PrimitiveType(Type<'src>), // u32, i32, c32, f32, ...
@@ -423,6 +470,29 @@ pub enum Node<'src> {
         op: UnaryOp,
         val: NodeBox<'src>,
     }, // op operand
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct FunctionInterface<'src> {
+    pub parameters: Vec<NodeBox<'src>>,
+    pub return_type: NodeBox<'src>,
+}
+
+impl<'src> TreeDisplay<'src> for FunctionInterface<'src> {
+    fn display(&self, internalizer: &Internalizer<'src>, indentation: &String) -> String {
+        format!(
+            "Interface  {}\n{indentation}{FORK_END} -> {}",
+            self.parameters
+                .iter()
+                .map(|parameter| format!(
+                    "\n{indentation}{BRANCH} {}",
+                    parameter.display(internalizer, &(indentation.clone() + VERTICAL_PLUS_2))
+                ))
+                .collect::<String>(),
+            self.return_type
+                .display(internalizer, &(indentation.clone() + "      "))
+        )
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]

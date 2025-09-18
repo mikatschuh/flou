@@ -16,7 +16,7 @@ pub enum UnaryOp {
     Ptr, // -> a
     Ref, // &a
 
-    Mut, // mut a
+    Mut, // mut
 }
 
 use UnaryOp::*;
@@ -34,7 +34,7 @@ impl fmt::Display for UnaryOp {
             Fac => "_!",
 
             Ptr => "->",
-            Ref => "&s",
+            Ref => "&",
 
             Mut => "mut",
         };

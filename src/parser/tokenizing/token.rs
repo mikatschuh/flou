@@ -80,13 +80,14 @@ pub enum TokenKind {
     NotAndEqual, // !&=
 
     Colon,      // :
-    ColonEqual, // :=
+    ColonColon, // ::
     EqualPipe,  // =|
     SwapSign,   // =|=
 
     Comma, // ,
 
     Ident,            // _
+    Literal,          // 1001010101
     Quote,            // "_"
     Keyword(Keyword), // if / loop / ..
 
@@ -211,7 +212,7 @@ impl TokenKind {
             And if c == '&' => AndAnd,
             And if c == '=' => AndEqual,
 
-            Colon if c == '=' => ColonEqual,
+            Colon if c == ':' => ColonColon,
 
             _ => return None,
         })
@@ -243,7 +244,6 @@ impl TokenKind {
                     | NotLeftEqual
                     | RightEqual
                     | NotRightEqual
-                    | ColonEqual
                     | SwapSign
             ),
             '>' => matches!(self, RightArrow | Right | RightRight | NotRight),
@@ -285,8 +285,8 @@ impl<'src> Token<'src> {
         Some(match self.kind {
             Dash => Neg,
             TokenKind::Not => Not,
-            RightArrow => Ptr,
             And => Ref,
+            RightArrow => Ptr,
             Ident if self.src == "mut" => Mut,
             _ => return None,
         })
@@ -294,82 +294,81 @@ impl<'src> Token<'src> {
 
     pub fn as_infix(self) -> Option<BinaryOp> {
         use BinaryOp::*;
-        match self.kind {
-            EqualEqual => Some(Eq),
-            NotEqual => Some(Ne),
+        Some(match self.kind {
+            Equal => Write,
+            EqualEqual => Eq,
+            NotEqual => Ne,
 
-            Left => Some(Smaller),
-            LeftLeft => Some(Lsh),
-            LeftLeftEqual => Some(LshAssign),
-            NotLeft => Some(GreaterEq),
-            LeftEqual => Some(SmallerEq),
-            NotLeftEqual => Some(Greater),
+            Left => Smaller,
+            LeftLeft => Lsh,
+            LeftLeftEqual => LshAssign,
+            NotLeft => GreaterEq,
+            LeftEqual => SmallerEq,
+            NotLeftEqual => Greater,
 
-            Right => Some(Greater),
-            RightRight => Some(Rsh),
-            RightRightEqual => Some(RshAssign),
-            NotRight => Some(SmallerEq),
-            RightEqual => Some(GreaterEq),
-            NotRightEqual => Some(Smaller),
+            Right => Greater,
+            RightRight => Rsh,
+            RightRightEqual => RshAssign,
+            NotRight => SmallerEq,
+            RightEqual => GreaterEq,
+            NotRightEqual => Smaller,
 
-            Plus => Some(Add),
-            PlusEqual => Some(AddAssign),
-            Dash => Some(Sub),
-            DashEqual => Some(SubAssign),
+            Plus => Add,
+            PlusEqual => AddAssign,
+            Dash => Sub,
+            DashEqual => SubAssign,
 
-            Star => Some(Mul),
-            StarEqual => Some(MulAssign),
-            Slash => Some(Div),
-            SlashEqual => Some(DivAssign),
-            Percent => Some(Mod),
-            PercentEqual => Some(ModAssign),
+            Star => Mul,
+            StarEqual => MulAssign,
+            Slash => Div,
+            SlashEqual => DivAssign,
+            Percent => Mod,
+            PercentEqual => ModAssign,
 
-            TokenKind::Dot => Some(Dot),
-            DotEqual => Some(DotAssign),
-            TokenKind::Cross => Some(Cross),
-            CrossEqual => Some(CrossAssign),
-            Up => Some(Pow {
+            TokenKind::Dot => Dot,
+            DotEqual => DotAssign,
+            TokenKind::Cross => Cross,
+            CrossEqual => CrossAssign,
+            Up => Pow {
                 grade: self.src.len() - 1,
-            }),
-            UpEqual => Some(PowAssign {
+            },
+            UpEqual => PowAssign {
                 grade: self.src.len() - 2,
-            }), // -2 to account for the equal sign
+            }, // -2 to account for the equal sign
 
-            Pipe => Some(BitOr),
-            PipePipe => Some(Or),
-            NotPipe => Some(BitNor),
-            NotPipePipe => Some(Nor),
-            PipeEqual => Some(OrAssign),
-            NotPipeEqual => Some(NorAssign),
+            Pipe => BitOr,
+            PipePipe => Or,
+            NotPipe => BitNor,
+            NotPipePipe => Nor,
+            PipeEqual => OrAssign,
+            NotPipeEqual => NorAssign,
 
-            RightPipe => Some(BitXor),
-            RightPipePipe => Some(Xor),
-            NotRightPipe => Some(BitXnor),
-            NotRightPipePipe => Some(Xnor),
-            RightPipeEqual => Some(XorAssign),
-            NotRightPipeEqual => Some(XnorAssign),
+            RightPipe => BitXor,
+            RightPipePipe => Xor,
+            NotRightPipe => BitXnor,
+            NotRightPipePipe => Xnor,
+            RightPipeEqual => XorAssign,
+            NotRightPipeEqual => XnorAssign,
 
-            TokenKind::And => Some(BitAnd),
-            AndAnd => Some(And),
-            NotAnd => Some(BitNand),
-            NotAndAnd => Some(Nand),
-            AndEqual => Some(AndAssign),
-            NotAndEqual => Some(NandAssign),
+            TokenKind::And => BitAnd,
+            AndAnd => And,
+            NotAnd => BitNand,
+            NotAndAnd => Nand,
+            AndEqual => AndAssign,
+            NotAndEqual => NandAssign,
 
-            ColonEqual => Some(Write),
-            SwapSign => Some(Swap),
-
-            _ => None,
-        }
+            SwapSign => Swap,
+            _ => return None,
+        })
     }
 
     pub fn as_postfix(self) -> Option<UnaryOp> {
         use UnaryOp::*;
-        match self.kind {
-            PlusPlus => Some(Inc),
-            DashDash => Some(Dec),
-            TokenKind::Not => Some(Fac),
-            _ => None,
-        }
+        Some(match self.kind {
+            PlusPlus => Inc,
+            DashDash => Dec,
+            TokenKind::Not => Fac,
+            _ => return None,
+        })
     }
 }

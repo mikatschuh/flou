@@ -20,7 +20,6 @@ mod binding_pow;
 pub mod intern;
 #[allow(dead_code)]
 pub mod keyword;
-pub mod num;
 mod rules;
 pub mod symbol;
 #[cfg(test)]
@@ -37,7 +36,7 @@ pub fn parse<'src>(
     let errors = Rc::new(Errors::empty(path));
     let internalizer = Rc::new(Internalizer::new());
     let root = Parser::new(
-        Tokenizer::new(text, errors.clone()),
+        Tokenizer::new(text, errors.clone(), TypeParser::new()),
         internalizer.clone(),
         errors.clone(),
         arena,
@@ -106,6 +105,7 @@ impl<'src> Parser<'src> {
             if bp < min_bp {
                 return Some(lhs);
             }
+
             let tok = self
                 .tokenizer
                 .next()
@@ -125,7 +125,7 @@ impl<'src> Parser<'src> {
                                 .with_node(Node::Statements(chain)),
                         )
                     } else {
-                        old_lhs
+                        return Some(old_lhs);
                     }
                 }
             };
@@ -156,6 +156,7 @@ impl<'src> Parser<'src> {
         {
             let found = *closed_bracket;
             let span = self.tokenizer.next().unwrap().span;
+            self.brackets -= 1;
             if found != open_bracket {
                 self.errors.push(
                     span,
@@ -206,6 +207,7 @@ impl<'src> Parser<'src> {
             }
 
             if let Some(Token { span, .. }) = self.tokenizer.next() {
+                self.brackets -= 1;
                 return span;
             }
             pos.into()
@@ -215,14 +217,21 @@ impl<'src> Parser<'src> {
     /// Pops an identifier if the next token is one. If not it generates the correct error message
     /// and leaves the token there. The position indicates were the identifier is expected to go.
     fn next_identifier(&mut self, pos: Position) -> (Span, Symbol<'src>) {
-        let Some(tok) = self
+        if let Some(tok) = self
             .tokenizer
             .next_if(|tok| matches!(tok.kind, TokenKind::Ident))
-        else {
+        {
+            (tok.span, self.internalizer.get(tok.src))
+        } else if let Some(tok) = self
+            .tokenizer
+            .next_if(|tok| matches!(tok.kind, TokenKind::Literal))
+        {
+            _ = self.tokenizer.get_literal();
+            (tok.span, self.internalizer.get(tok.src))
+        } else {
             self.errors.push(pos.into(), ErrorCode::ExpectedIdent);
-            return (pos.into(), self.internalizer.empty());
-        };
-        (tok.span, self.internalizer.get(tok.src))
+            (pos.into(), self.internalizer.empty())
+        }
     }
 
     fn parse_list(&mut self, lhs: NodeBox<'src>) -> NodeBox<'src> {

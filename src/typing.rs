@@ -2,7 +2,8 @@ use std::fmt::Display;
 
 use crate::parser::{
     intern::Internalizer,
-    num,
+    parse,
+    tokenizing::num,
     tree::{NodeBox, TreeDisplay},
 };
 
@@ -13,6 +14,8 @@ pub enum NumberKind {
     Float,
     Arbitrary,
 }
+use ::num::Num;
+use colored::control::set_override;
 use NumberKind::*;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,6 +81,7 @@ const SYSTEM_SIZE: usize = 32;
 #[cfg(target_pointer_width = "16")]
 const SYSTEM_SIZE: usize = 16;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TypeParser {
     target_ptr_size: usize,
 }
@@ -122,7 +126,8 @@ impl TypeParser {
             },
         })
     }
-    pub fn parse_type_suffix(&self, mut input: &[u8]) -> Option<NumberType> {
+    pub fn parse_type_suffix(&self, input: &mut &[u8]) -> Option<NumberType> {
+        let original_input = *input;
         if input.is_empty() {
             return None;
         }
@@ -132,27 +137,28 @@ impl TypeParser {
             b'f' => Float,
             _ => return None,
         };
-        input = &input[1..];
-        if input.is_empty() {
-            return Some(NumberType { kind, size: None });
-        };
+        *input = &input[1..];
         Some(NumberType {
             kind,
-            size: match input {
-                b"x" => Some(self.target_ptr_size),
-                _ => Some({
-                    let mut parsed_size =
-                        num::parse_number(&mut input).1?.to_u64_digits().into_iter();
-                    if !input.is_empty() {
-                        return None;
-                    }
-                    let size = parsed_size.next()?;
-                    if !parsed_size.all(|digit| digit == 0) {
-                        return None;
-                    }
-                    size as usize
-                }),
-            },
+            size: Some(if input.starts_with(&[b'x']) {
+                self.target_ptr_size
+            } else if !input.is_empty() && input[0].is_ascii_digit() {
+                let (_, parsed_size) = num::parse_number(input);
+                let Some(parsed_size) = parsed_size else {
+                    *input = original_input;
+                    return None;
+                };
+                let mut parsed_size = parsed_size.to_u64_digits().into_iter();
+
+                let size = parsed_size.next()?;
+                if !parsed_size.all(|digit| digit == 0) {
+                    *input = original_input;
+                    return None;
+                }
+                size as usize
+            } else {
+                return Some(NumberType { kind, size: None });
+            }),
         })
     }
 }

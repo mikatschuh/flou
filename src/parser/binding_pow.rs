@@ -11,28 +11,28 @@ use TokenKind::*;
 pub(super) type BindingPow = usize;
 
 pub(super) const STATEMENT: BindingPow = 1;
-pub(super) const LABEL: BindingPow = 2;
 pub(super) const PATH: BindingPow = 2;
-pub(super) const COLON: BindingPow = 4;
-pub(super) const BINDING: BindingPow = 3;
+pub(super) const COLON: BindingPow = 8;
+pub(super) const BIND: BindingPow = 5; // allows tick
+pub(super) const LABEL: BindingPow = 15; // allows tick
 
 impl<'src> Token<'src> {
     pub const fn binding_pow(self) -> Option<BindingPow> {
         Some(match self.kind {
             Closed(..) | Comma => return None,
 
-            RightArrow | Ident | Quote | Keyword(..) | Open(Curly) => 0,
+            RightArrow | Ident | Literal | Quote | Keyword(..) | Open(Curly) => 0,
 
-            Equal | EqualPipe => 2,
+            ColonColon => 4,
 
-            Colon => 5,
+            Colon => 7,
 
-            Tick => 8,
-
-            ColonEqual | LeftLeftEqual | RightRightEqual | PipeEqual | NotPipeEqual
+            Equal | EqualPipe | LeftLeftEqual | RightRightEqual | PipeEqual | NotPipeEqual
             | RightPipeEqual | NotRightPipeEqual | AndEqual | NotAndEqual | PlusEqual
             | DashEqual | StarEqual | SlashEqual | PercentEqual | DotEqual | CrossEqual
             | UpEqual | SwapSign | PlusPlus | DashDash => 10,
+
+            Tick => 15,
 
             PipePipe | NotPipePipe => 20,
             RightPipePipe | NotRightPipePipe => 30,
